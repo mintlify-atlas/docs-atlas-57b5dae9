@@ -1,97 +1,77 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Mazinger Dubber: End-to-End Video Dubbing Pipeline"
+description: "Dub any video into another language with voice cloning in a single command. Mazinger chains download, transcription, translation, TTS, and subtitle burning automatically."
 ---
 
-## Setting up
+Mazinger Dubber is a Python CLI and library that takes a video URL or local file and produces a fully dubbed audio or video output — automatically transcribing speech, translating subtitles, cloning the speaker's voice, and assembling the final timeline. Every stage runs independently or as part of the full pipeline, and interrupted runs resume from where they left off.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Mazinger with pip and choose your transcription and TTS extras
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Dub your first video in one command — no configuration required
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Pipeline Overview" icon="diagram-project" href="/pipeline/overview">
+    Understand how the 10 stages connect, what each produces, and how caching works
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Voice Cloning" icon="microphone" href="/pipeline/voice-cloning">
+    Auto-clone, voice themes, built-in profiles, or bring your own voice sample
   </Card>
-</Columns>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli-dub">
+    Every command, flag, and default value for the mazinger CLI
+  </Card>
+  <Card title="Python API" icon="code" href="/reference/python-dubber">
+    Use MazingerDubber programmatically with full parameter reference
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+Mazinger chains ten stages into a single pipeline. Each stage can also run independently via its own sub-command.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Download and extract audio">
+    Fetch the video from a URL (YouTube and more via yt-dlp) or ingest a local file. Extract the audio track for transcription.
+  </Step>
+  <Step title="Transcribe and analyze">
+    Convert speech to SRT subtitles using OpenAI Whisper API, faster-whisper, WhisperX, or MLX Whisper. An LLM picks key frames and generates a structured content summary (title, key points, keywords) for translation context.
+  </Step>
+  <Step title="Translate with duration awareness">
+    Translate subtitles into the target language using duration-aware word budgets so the dubbed speech fits the original timeline. Re-segmentation merges fragments and splits oversized entries for readability.
+  </Step>
+  <Step title="Synthesize and assemble">
+    Clone the speaker's voice and synthesize speech for every subtitle entry using Qwen3-TTS, Chatterbox, or MLX TTS. Assemble segments on the original timeline with optional tempo adjustment, loudness matching, and background audio mixing. Optionally burn styled subtitles into the output video.
+  </Step>
+</Steps>
 
-## Need inspiration?
+## Voice options
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Auto-clone" icon="wand-magic-sparkles" href="/pipeline/voice-cloning#auto-clone">
+    No configuration — Mazinger extracts the best 20–60 s segment and clones the speaker automatically
+  </Card>
+  <Card title="Voice themes" icon="palette" href="/pipeline/voice-cloning#voice-themes">
+    16 pre-defined themes (narrator, warm, deep, news, storyteller, kid, teen — male/female)
+  </Card>
+  <Card title="Built-in profiles" icon="user" href="/pipeline/voice-cloning#built-in-profiles">
+    Ready-made profiles (abubakr, 3b1b, morgan-freeman, and more) downloaded from HuggingFace
+  </Card>
+  <Card title="Custom voice" icon="microphone-lines" href="/pipeline/voice-cloning#custom-voice">
+    Bring your own voice sample and transcript for full control over the cloned voice
+  </Card>
+</CardGroup>
+
+## TTS engines
+
+Mazinger supports three TTS backends — pick the one that matches your hardware and workflow.
+
+| Engine | Hardware | Key strength |
+|--------|----------|-------------|
+| **Qwen3-TTS** (default) | CUDA GPU | Multilingual, requires voice sample + transcript |
+| **Chatterbox** | CUDA GPU | Emotion and pacing control, audio-only reference |
+| **MLX TTS** | Apple Silicon | Native M-series performance, no CUDA needed |
+
+<Note>
+  Qwen, Chatterbox, and MLX require different dependencies and cannot share the same Python environment. Create a separate virtual environment for each engine.
+</Note>

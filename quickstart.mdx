@@ -1,80 +1,203 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Get started with Mazinger Dubber in one command"
+description: "Dub a video into another language in a single command. Choose auto voice cloning, a voice theme, or a built-in profile — no manual configuration required."
 ---
 
-## Get started in three steps
+Mazinger Dubber runs the full dubbing pipeline — download, transcribe, translate, synthesize, and assemble — from a single `mazinger dub` command. The simplest path requires only a target language: Mazinger automatically clones the original speaker's voice from the source audio and produces a dubbed WAV or video file.
 
-Get your documentation site running locally and make your first customization.
+## Before you start
 
-### Step 1: Set up your local environment
+You need Python 3.10+, ffmpeg on your `PATH`, and an OpenAI API key. For local TTS, install the appropriate extra (see [Installation](/installation)).
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Set your OpenAI API key">
+    Mazinger uses the OpenAI API for transcription, translation, thumbnails, and content description. Export your key before running any command:
 
-### Step 2: Deploy your changes
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    ```
+  </Step>
+  <Step title="Dub a video with auto voice cloning">
+    The simplest approach — no voice files or configuration needed. Mazinger picks the best 20–60 second segment from the source audio and uses it as the cloning reference automatically:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+        --target-language Spanish
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    The dubbed audio is saved at `./output/projects/<slug>/tts/dubbed.wav`.
+  </Step>
+  <Step title="Check your output">
+    By default, Mazinger writes all project files under `./output/projects/<slug>/`. To change the output location, pass `--base-dir`:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+        --target-language Spanish \
+        --base-dir ./my-dubs
+    ```
 
-### Step 3: Go live
+    To get a video file instead of just audio, add `--output-type video`:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash
+    mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+        --target-language Spanish \
+        --output-type video
+    ```
+  </Step>
+</Steps>
 
-## Next steps
+<Tip>
+  Every completed stage — and every individual TTS segment — is cached to disk. If a run is interrupted, re-running the exact same command resumes from where it left off without repeating finished work. To start fresh, add `--force-reset`.
+</Tip>
 
-Now that you have your docs running, explore these key features:
+## Voice modes
 
-<CardGroup cols={2}>
+Mazinger supports three ways to specify the dubbing voice. All three work with the same `mazinger dub` command.
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+### Auto-clone (no flags needed)
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+When no voice option is provided, Mazinger automatically clones the speaker directly from the source audio:
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --target-language Spanish
+```
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+### Voice theme
 
-</CardGroup>
+Choose from 16 pre-defined themes. No voice sample or profile download required — the theme generates a voice profile the first time and reuses it on subsequent runs:
+
+```bash
+# List all available themes
+mazinger profile list
+
+# Dub using a theme
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --voice-theme narrator-m \
+    --target-language Spanish
+```
+
+Available themes: `narrator-m/f`, `young-m/f`, `deep-m/f`, `warm-m/f`, `news-m/f`, `storyteller-m/f`, `kid-m/f`, `teen-m/f`.
+
+### Built-in voice profile
+
+Pre-made profiles are hosted on HuggingFace and downloaded automatically by name:
+
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+Available profiles: `abubakr` · `daheeh-v1` · `3b1b` · `italian-v1` · `morgan-freeman` · `trump-v1`.
+
+Profiles also work with local video files:
+
+```bash
+mazinger dub ./lecture.mp4 --clone-profile abubakr --target-language Spanish
+mazinger dub ./podcast.mp3 --clone-profile abubakr --target-language French
+```
+
+## Produce a video with subtitles
+
+Add `--output-type video` and `--embed-subtitles` to burn styled subtitles into the output:
+
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --output-type video \
+    --embed-subtitles \
+    --subtitle-google-font "Noto Sans Arabic" \
+    --subtitle-font-size 24
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  `--embed-subtitles` implies `--output-type video` — you do not need to set both flags.
 </Note>
+
+## Python API
+
+Use `MazingerDubber` to run the full pipeline programmatically:
+
+```python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...", base_dir="./output")
+
+# Auto-clone the speaker's voice (simplest)
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    target_language="Spanish",
+)
+
+# With a voice theme
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_theme="narrator-m",
+    target_language="Spanish",
+    output_type="video",
+)
+
+# With explicit voice files and burned-in subtitles
+from mazinger.subtitle import SubtitleStyle
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_sample="speaker.m4a",
+    voice_script="speaker_transcript.txt",
+    target_language="Spanish",
+    output_type="video",
+    subtitle_style=SubtitleStyle(font_size=24),
+)
+
+print(proj.final_audio)   # ./output/projects/<slug>/tts/dubbed.wav
+print(proj.final_video)   # ./output/projects/<slug>/tts/dubbed.mp4
+print(proj.summary())     # human-readable overview of all output files
+```
+
+## Run a single pipeline stage
+
+Every stage has its own sub-command. This is useful when you want to inspect or modify intermediate output before continuing.
+
+```bash
+# Download and extract audio only
+mazinger download "https://youtube.com/watch?v=VIDEO_ID" --base-dir ./output
+
+# Transcribe an audio file to SRT
+mazinger transcribe ./output/projects/my-video/source/audio.mp3 -o subs.srt
+
+# Translate an existing SRT
+mazinger translate --srt subs.srt --target-language French -o translated.srt
+
+# Burn subtitles into a video
+mazinger subtitle video.mp4 --srt translated.srt -o output.mp4
+```
+
+To transcribe using a local model instead of the cloud API:
+
+```bash
+# faster-whisper (requires transcribe-faster extra)
+mazinger transcribe audio.mp3 -o subs.srt --method faster-whisper --device cuda
+
+# MLX Whisper on Apple Silicon (requires transcribe-mlx extra)
+mazinger transcribe audio.mp3 -o subs.srt --method mlx-whisper
+```
+
+## Resume and reset
+
+Re-running the same `mazinger dub` command resumes from the last completed stage automatically — no extra flags needed:
+
+```bash
+# Re-run after an interruption — picks up where it left off
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+To discard all cached output and start fresh:
+
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --target-language Arabic \
+    --force-reset
+```

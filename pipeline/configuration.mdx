@@ -1,0 +1,241 @@
+---
+title: "Configuring Mazinger Dubber"
+description: "Environment variables, custom LLM providers, transcription backends, TTS engines, tempo control, translation word budgets, and LLM usage tracking for Mazinger Dubber."
+---
+
+Mazinger is configured through environment variables, CLI flags, and Python constructor arguments. CLI flags always take precedence over environment variables. This page covers the full set of configuration options: LLM provider settings, transcription method selection, TTS engine comparison, tempo control modes, translation tuning, and built-in usage tracking.
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | — | API key for OpenAI (or any OpenAI-compatible provider) |
+| `OPENAI_BASE_URL` | — | Custom base URL for the LLM API — set this to use a non-OpenAI provider |
+| `OPENAI_MODEL` | `gpt-4.1` | Default model for translation, description, review, and re-segmentation |
+
+```bash
+# Set via environment variables
+export OPENAI_API_KEY="sk-..."
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" --clone-profile abubakr
+
+# Or pass the key directly as a CLI flag
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --openai-api-key "sk-..."
+```
+
+In Python, pass them to the `MazingerDubber` constructor:
+
+```python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(
+    openai_api_key="sk-...",
+    base_dir="./output",
+)
+```
+
+## Custom LLM provider
+
+Mazinger works with any OpenAI-compatible API. Point `--openai-base-url` at your provider's endpoint and supply the matching key and model name.
+
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --openai-base-url "https://api.your-provider.com/v1" \
+    --openai-api-key "your-key" \
+    --llm-model "your-model-name"
+```
+
+### Ollama (local LLM)
+
+To use Ollama, point the base URL at the Ollama OpenAI-compatible endpoint. Disable thinking mode for models like Qwen3 that enable it by default with `--no-llm-think`.
+
+<CodeGroup>
+
+```bash CLI
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --openai-base-url "http://localhost:11434/v1" \
+    --openai-api-key "ollama" \
+    --llm-model "qwen3.5:2b-q8_0" \
+    --no-llm-think
+```
+
+```python Python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(
+    openai_api_key="ollama",
+    openai_base_url="http://localhost:11434/v1",
+    llm_model="qwen3.5:2b-q8_0",
+    llm_think=False,
+)
+```
+
+</CodeGroup>
+
+## Transcription methods
+
+| Method | Flag value | Default model | GPU required | Cost |
+|--------|-----------|---------------|:------------:|------|
+| OpenAI Whisper API | `openai` | `whisper-1` | No | Pay per audio minute |
+| faster-whisper | `faster-whisper` | `large-v3` | Yes (or CPU) | Free |
+| WhisperX | `whisperx` | `large-v3` | Yes | Free |
+| MLX Whisper | `mlx-whisper` | `mlx-community/whisper-large-v3-turbo` | Apple Silicon | Free |
+
+**Choosing a method:**
+
+- **Apple Silicon** → use `mlx-whisper` (no CUDA needed).
+- **Chatterbox TTS** → use `openai` or `faster-whisper` (WhisperX conflicts with Chatterbox dependencies).
+- **Offline processing** → use `faster-whisper` (the default).
+- **Word-level alignment** → use `whisperx` with Qwen TTS (requires the `transcribe-whisperx` extra).
+
+Set the method with `--transcribe-method` on the CLI or `transcribe_method=` in Python:
+
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --transcribe-method openai \
+    --target-language Spanish
+```
+
+## TTS engines
+
+| Feature | Qwen3-TTS | Chatterbox | MLX |
+|---------|-----------|------------|-----|
+| Voice cloning requires | Audio + transcript | Audio only | Audio + transcript |
+| Emotion control | No | Yes (`exaggeration` param) | No |
+| Pacing control | No | Yes (`cfg` param) | No |
+| Languages | 10 | 23 | 10+ |
+| Default model | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | `ResembleAI/chatterbox` | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16` |
+| Hardware | CUDA GPU | CUDA GPU | Apple Silicon |
+
+<Warning>
+  Qwen, Chatterbox, and MLX require different dependencies and cannot share the same Python environment. Create separate virtual environments for each engine.
+</Warning>
+
+### Chatterbox parameter guide
+
+| Use case | `exaggeration` | `cfg` |
+|----------|:--------------:|:-----:|
+| General use | 0.5 | 0.5 |
+| Fast speakers | 0.5 | 0.3 |
+| Expressive speech | 0.7 | 0.3 |
+
+## Tempo control
+
+Controls how dubbed audio segments fit into the original timeline.
+
+| Mode | CLI flags | Behavior |
+|------|-----------|----------|
+| Auto (default) | *(none)* | Speed up segments that overflow; never slow down |
+| Dynamic | `--dynamic-tempo` | Per-segment speed matching — both faster and slower |
+| Fixed | `--fixed-tempo 1.1` | Constant multiplier applied to all segments |
+| Off | `tempo_mode="off"` in Python | No speed adjustment — segments placed as-is |
+
+`--max-tempo` (default: `1.5`) caps the speed-up ratio for both auto and dynamic modes. If both `--fixed-tempo` and `--dynamic-tempo` are given, fixed tempo takes precedence.
+
+```bash
+# Dynamic tempo — each segment individually matched
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr --dynamic-tempo --target-language Arabic
+
+# Fixed tempo — every segment played at 1.1×
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr --fixed-tempo 1.1 --target-language Spanish
+```
+
+In Python, pass `tempo_mode="dynamic"`, `tempo_mode="fixed"`, or `tempo_mode="off"` to `dub()`.
+
+## Translation tuning
+
+### Duration-aware word budgets
+
+The translator calculates a maximum word count for each subtitle entry:
+
+```
+max_words = duration_seconds × words_per_second × duration_budget
+```
+
+| Parameter | CLI flag | Default | Purpose |
+|-----------|---------|---------|---------|
+| Speech rate | `--words-per-second` | `2.0` | Assumed words per second in the target language |
+| Time budget | `--duration-budget` | `0.80` | Fraction of each entry's duration allocated for dubbed speech |
+
+Lower `duration_budget` leaves more silence between entries. Higher `words_per_second` allows more words per entry — useful for fast-paced languages.
+
+### Technical terms
+
+By default, technical terms (library names, API calls, acronyms) are kept in English. To translate them:
+
+```bash
+mazinger translate --srt subs.srt --target-language Arabic \
+    --translate-technical-terms
+```
+
+### Batching
+
+Translation processes 24 subtitle entries per LLM call with an 8-entry overlap for context continuity. These defaults can be changed in the Python API:
+
+```python
+from mazinger.translate import translate_srt
+
+translated = translate_srt(
+    srt_text, desc, thumbs, client,
+    blocks_per_batch=24,
+    overlap_size=8,
+)
+```
+
+## LLM usage tracking
+
+Every LLM call during the pipeline (thumbnails, describe, translate, re-segment-merge) is recorded automatically. After the pipeline finishes, a summary is printed to the log:
+
+```
+═══ LLM Usage Report ═══
+  thumbnails        model=gpt-4.1                     calls=1  in=   3,420  out=    812
+  describe          model=gpt-4.1                     calls=1  in=  12,105  out=    534
+  translate         model=gpt-4.1                     calls=4  in=  45,230  out=  6,102
+  resegment-merge   model=gpt-4.1                     calls=2  in=   8,400  out=  1,230
+  ────────────────────────────────────────────────────────────────────────────
+  TOTAL                                               calls=8  in=  69,155  out=  8,678
+══════════════════════════
+```
+
+Raw records are also saved to `<project>/llm_usage.json`:
+
+```json
+[
+    {"stage": "translate", "model": "gpt-4.1", "input_tokens": 5000, "output_tokens": 2000},
+    {"stage": "describe",  "model": "gpt-4.1", "input_tokens": 3000, "output_tokens": 500}
+]
+```
+
+### Using LLMUsageTracker in Python
+
+You can attach a tracker to individual pipeline functions to monitor usage across multiple calls:
+
+```python
+from mazinger import LLMUsageTracker
+from mazinger.translate import translate_srt
+from mazinger.resegment import resegment_srt
+
+tracker = LLMUsageTracker()
+
+translated = translate_srt(srt_text, desc, thumbs, client, usage_tracker=tracker)
+resegmented = resegment_srt(translated, client=client, usage_tracker=tracker)
+
+print(tracker.report())
+print(f"Total tokens: {tracker.total_tokens}")
+```
+
+## Caching and resume
+
+Every pipeline stage checks whether its output files exist before running. If they do, the stage is skipped. TTS synthesis has finer granularity — individual segment WAVs (`seg_0001.wav`, `seg_0002.wav`, ...) are checked, so a run interrupted at segment 150 of 300 resumes from segment 151.
+
+| Behavior | How to get it |
+|----------|--------------|
+| Resume from where you left off | Re-run the same command (default) |
+| Start completely fresh | Add `--force-reset` |
+
+`--force-reset` works with both `dub` and `speak`. In Python, pass `force_reset=True` to `dub()`.

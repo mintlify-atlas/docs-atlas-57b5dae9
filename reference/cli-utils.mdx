@@ -1,0 +1,286 @@
+---
+title: "mazinger Utility Commands — download, slice, and profile"
+description: "Reference for mazinger's six utility commands: download, slice, thumbnails, describe, resegment, and profile list / profile generate."
+---
+
+Mazinger ships several focused utility commands that correspond to individual stages of the dubbing pipeline. Each can be used standalone when you need fine-grained control over a specific step — fetching a video, trimming a clip, extracting key frames, analysing content, cleaning up subtitle timing, or managing voice profiles.
+
+All commands accept the global `--base-dir` and `--verbose` flags.
+
+---
+
+## download
+
+Fetch a remote video (via yt-dlp), or ingest a local video or audio file, and extract the audio track into a project directory.
+
+```bash
+mazinger download <source> [options]
+```
+
+`source` is required and accepts a URL, a local video file, or a local audio file.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--slug` | auto-generated | Override the project slug (directory name) |
+| `--quality` | best available | Video quality: `low`, `medium`, `high`, or a numeric height (e.g. `720`, `1080`) |
+| `--cookies-from-browser` | — | Browser name passed to yt-dlp `--cookies-from-browser` |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+| `--start` | — | Start timestamp for automatic slicing (e.g. `00:01:30` or `90`) |
+| `--end` | — | End timestamp for automatic slicing (e.g. `00:05:00` or `300`) |
+| `--base-dir` | `./mazinger_output` | Root output directory |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+### Examples
+
+```bash
+# Download a YouTube video at 720p
+mazinger download "https://youtube.com/watch?v=abc123" \
+    --base-dir ./output --quality 720
+
+# Download and automatically extract only a segment
+mazinger download "https://youtube.com/watch?v=abc123" \
+    --start 00:02:00 --end 00:04:00
+
+# Ingest a local video file into a named project
+mazinger download ./lecture.mp4 --slug my-lecture
+```
+
+---
+
+## slice
+
+Extract a time range from a video or audio file. At least one of `--start` or `--end` is required.
+
+```bash
+mazinger slice <source> [options]
+```
+
+`source` is required.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--slug` | auto-generated | Project slug |
+| `--quality` | best available | Video quality (when downloading a URL) |
+| `--cookies-from-browser` | — | Browser name for yt-dlp cookies |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+| `--start` | — | Start timestamp (e.g. `00:01:30` or `90`) |
+| `--end` | — | End timestamp (e.g. `00:05:00` or `300`) |
+| `--base-dir` | `./mazinger_output` | Root output directory |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+### Examples
+
+```bash
+# Extract a 3-minute clip from a YouTube video
+mazinger slice "https://youtube.com/watch?v=abc123" \
+    --start 00:01:00 --end 00:04:00
+
+# Extract from a local file using second offsets
+mazinger slice ./lecture.mp4 --start 90 --end 300
+
+# Trim just the tail of a local file
+mazinger slice ./recording.mp4 --end 00:10:00
+```
+
+---
+
+## thumbnails
+
+Use an LLM to select semantically interesting timestamps from the transcript, then extract the corresponding video frames as JPEG images. The frame paths are saved to a metadata JSON file that can be passed to `describe` or `translate`.
+
+```bash
+mazinger thumbnails [source] [options]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--video` | — | Path to the video file (overrides auto-resolved project video) |
+| `--srt` | — | Path to an SRT file (overrides auto-transcription) |
+| `--output-dir` | — | Directory for extracted thumbnail images |
+| `--meta` | — | Path to save the metadata JSON file |
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model used to select timestamps |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+| `--transcribe-method` | `faster-whisper` | Transcription backend (when no `--srt` is provided) |
+| `--whisper-model` | varies | Whisper model name |
+| `--mlx-whisper-model` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model name |
+| `--beam-size` | `5` | Beam size for Whisper decoding |
+| `--slug` | auto-generated | Project slug |
+| `--base-dir` | `./mazinger_output` | Root output directory |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+### Examples
+
+```bash
+# Extract key frames using an existing SRT
+mazinger thumbnails \
+    --video video.mp4 \
+    --srt subs.srt \
+    --output-dir ./thumbs \
+    --meta ./thumbs/meta.json
+
+# Auto-transcribe from a URL, then extract thumbnails
+mazinger thumbnails "https://youtube.com/watch?v=abc123" \
+    --output-dir ./thumbs
+```
+
+---
+
+## describe
+
+Generate a structured content analysis (title, summary, key points, keywords) from an SRT transcript and optional thumbnail images. The result is saved as a JSON file that can improve translation quality when passed to `translate` or `dub`.
+
+```bash
+mazinger describe [source] [options]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--srt` | — | Path to an SRT file (overrides auto-transcription from source) |
+| `--thumbnails-meta` | — | Path to a thumbnails `meta.json` file |
+| `-o`, `--output` | project description JSON | Output JSON file path |
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model for analysis |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+| `--transcribe-method` | `faster-whisper` | Transcription backend (when no `--srt` is provided) |
+| `--whisper-model` | varies | Whisper model name |
+| `--mlx-whisper-model` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model name |
+| `--beam-size` | `5` | Beam size for Whisper decoding |
+| `--slug` | auto-generated | Project slug |
+| `--base-dir` | `./mazinger_output` | Root output directory |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+### Examples
+
+```bash
+# Describe using an existing SRT and thumbnails
+mazinger describe \
+    --srt subs.srt \
+    --thumbnails-meta ./thumbs/meta.json \
+    -o description.json
+
+# Auto-transcribe from URL, auto-extract thumbnails, then describe
+mazinger describe "https://youtube.com/watch?v=abc123" \
+    -o description.json
+```
+
+---
+
+## resegment
+
+Re-segment an SRT file for readability by merging very short fragments and splitting long entries. When an LLM API key is available, the command uses an LLM for natural sentence boundary detection; otherwise it falls back to rule-based splitting.
+
+```bash
+mazinger resegment [options]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--srt` | (required) | Path to the input SRT file |
+| `-o`, `--output` | (required) | Output SRT file path |
+| `--max-chars` | `84` | Maximum characters per subtitle entry |
+| `--max-dur` | `4.0` | Maximum duration in seconds per subtitle entry |
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key (optional — falls back to rule-based if absent) |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model for segmentation |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+| `--base-dir` | `./mazinger_output` | Root output directory |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+### Examples
+
+```bash
+# Re-segment a translated SRT with defaults
+mazinger resegment --srt translated.srt -o final.srt
+
+# Tighter entry limits
+mazinger resegment --srt translated.srt -o final.srt \
+    --max-chars 80 --max-dur 5.0
+
+# Rule-based only (no LLM cost) — omit API key
+mazinger resegment --srt translated.srt -o final.srt \
+    --max-chars 84 --max-dur 4.0
+```
+
+---
+
+## profile
+
+Manage voice themes — pre-defined reference voices that can be used with `--voice-theme` in `dub` and `speak`.
+
+### profile list
+
+List all available built-in voice themes.
+
+```bash
+mazinger profile list
+```
+
+Displays all 16 themes with their name, gender, and supported languages. No flags or API keys required.
+
+### profile generate
+
+Generate a reusable voice profile directory from a theme. The output directory contains `voice.wav` (the reference audio) and `script.txt` (the reference transcript), suitable for use with `--clone-profile <path>` in any subsequent `dub` or `speak` invocation.
+
+```bash
+mazinger profile generate <theme> <language> -o <output-dir> [options]
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `theme` | Theme name from `mazinger profile list` (e.g. `narrator-m`, `young-f`) |
+| `language` | Target language for the generated voice sample (e.g. `English`, `Spanish`) |
+
+#### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-o`, `--output` | (required) | Output directory for the generated profile |
+| `--device` | `auto` | Compute device: `auto`, `cuda`, or `cpu` |
+| `--dtype` | `bfloat16` | Weight dtype for the Qwen VoiceDesign model |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+#### Examples
+
+```bash
+# List available themes first
+mazinger profile list
+
+# Generate a male narrator profile for Spanish
+mazinger profile generate narrator-m Spanish -o ./my-narrator
+
+# Use the generated profile
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --clone-profile ./my-narrator \
+    --target-language Spanish
+
+# Generate a warm female voice for Arabic
+mazinger profile generate warm-f Arabic -o ./warm-arabic \
+    --device cuda
+
+# Use the generated profile with dub
+mazinger dub ./lecture.mp4 \
+    --clone-profile ./warm-arabic \
+    --target-language Arabic \
+    --output-type video \
+    --embed-subtitles \
+    --subtitle-google-font "Noto Sans Arabic"
+```
+
+<Tip>
+`profile generate` only needs to run once per theme/language combination. Save the output directory and pass it with `--clone-profile` in future runs to skip the generation step entirely.
+</Tip>

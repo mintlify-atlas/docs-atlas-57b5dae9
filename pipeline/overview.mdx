@@ -1,0 +1,175 @@
+---
+title: "Mazinger Pipeline: 10-Stage Dubbing Architecture"
+description: "How Mazinger's ten stages connect — from video download to subtitle burning — with automatic resume, per-stage caching, and granular TTS segment checkpointing."
+---
+
+Mazinger processes video through ten sequential stages. Each stage reads inputs from a well-defined location inside the project directory and writes its outputs back, so stages can run independently via their own sub-commands or chain together when you run the full `dub` command. Interrupted runs resume automatically — stages skip if their outputs already exist, and TTS synthesis is checkpointed at the individual segment level.
+
+## The ten stages
+
+<Steps>
+  <Step title="Download">
+    Fetches a video from a URL using yt-dlp (YouTube, Vimeo, and hundreds of other sites) or copies a local file into the project directory. Then extracts the audio track using ffmpeg.
+
+    Optional `--start` and `--end` flags slice the media to a time range before any further processing. The standalone `mazinger slice` sub-command provides this as an independent operation.
+
+    **Inputs:** URL or local file path
+    **Outputs:** `source/video.mp4`, `source/audio.mp3`
+
+    ```bash
+    mazinger download "https://youtube.com/watch?v=VIDEO_ID" --base-dir ./output
+    ```
+  </Step>
+
+  <Step title="Transcribe">
+    Converts the audio track to SRT subtitles. Four backends are supported. Before transcription, audio is automatically converted to 16 kHz mono WAV — the native format Whisper was trained on. When video metadata is available (title, description, tags), an initial prompt is built from it to anchor the decoder on expected vocabulary.
+
+    The raw transcription is saved as `source.raw.srt`. A cleaned-up version with basic re-segmentation is saved as `source.srt`.
+
+    **Inputs:** `source/audio.mp3`
+    **Outputs:** `transcription/source.raw.srt`, `transcription/source.srt`
+
+    | Backend | How it runs | What you need |
+    |---------|-------------|---------------|
+    | OpenAI Whisper API | Cloud | API key |
+    | faster-whisper | Local, CTranslate2 | `transcribe-faster` extra, CUDA GPU |
+    | WhisperX | Local, PyTorch + wav2vec2 | `transcribe-whisperx` extra, CUDA GPU |
+    | MLX Whisper | Local, Apple MLX | `transcribe-mlx` extra, Apple Silicon |
+
+    ```bash
+    mazinger transcribe ./output/projects/my-video/source/audio.mp3 -o subs.srt
+    ```
+  </Step>
+
+  <Step title="Thumbnails">
+    Sends the full SRT transcript to an LLM to select timestamps where visual content is most relevant to the spoken content. Then uses ffmpeg to extract JPEG frames at those timestamps.
+
+    The thumbnails serve as visual context for the description and translation stages — they help the LLM understand what is on screen when translating technical terms or ambiguous phrases.
+
+    **Inputs:** `source/video.mp4`, `transcription/source.srt`
+    **Outputs:** `thumbnails/thumb_NNN_Xs.jpg`, `thumbnails/meta.json`
+  </Step>
+
+  <Step title="Describe">
+    Sends the transcript and thumbnail images to an LLM to produce a structured content analysis: a concise title, a 2–4 sentence summary, a list of key concepts, and a set of technical keywords, library names, and proper nouns.
+
+    This description is passed to the translation stage as context so the LLM can produce coherent, domain-aware translations.
+
+    **Inputs:** `transcription/source.srt`, `thumbnails/meta.json`
+    **Outputs:** `analysis/description.json`
+  </Step>
+
+  <Step title="Review (optional)">
+    An optional LLM pass over the ASR-generated transcript. Enable it with `--asr-review` in the CLI or `asr_review=True` in the Python API.
+
+    The review step fixes obvious typos and misspellings, adds missing punctuation, corrects ASR word-boundary errors, and optionally converts technical terms to their standard English spelling (`--keep-technical-english`). The LLM receives the content description for context and processes subtitles in batches of 30 with 6-entry overlap.
+
+    **Inputs:** `transcription/source.srt`, `analysis/description.json`
+    **Outputs:** `transcription/source.reviewed.srt`
+  </Step>
+
+  <Step title="Translate">
+    Translates the SRT into the target language. Subtitles are processed in batches of 24 entries with an 8-entry overlap window for context continuity. Thumbnails and the content description are included in the LLM prompt.
+
+    Each entry receives a maximum word count calculated as:
+
+    ```
+    max_words = duration_seconds × words_per_second × duration_budget
+    ```
+
+    The defaults are 2.0 words/second and 0.80 budget (80% of available time), preventing the translated text from being longer than what TTS can speak within the original timing.
+
+    **Inputs:** `transcription/source.srt`, `analysis/description.json`, `thumbnails/meta.json`
+    **Outputs:** `transcription/translated.raw.srt`
+
+    ```bash
+    mazinger translate --srt subs.srt --target-language French -o translated.srt
+    ```
+  </Step>
+
+  <Step title="Re-segment">
+    Reorganizes subtitle entries for readability and timing in two phases. First, short fragmented entries are merged into complete sentences (using an LLM when available, falling back to rule-based merging otherwise). Then entries that exceed the character or duration limit are split into multiple entries.
+
+    Default limits: 84 characters per entry, 4.0 seconds per entry.
+
+    **Inputs:** `transcription/translated.raw.srt`
+    **Outputs:** `subtitles/translated.srt`
+  </Step>
+
+  <Step title="Speak">
+    Generates a WAV file for each subtitle entry using voice-cloned TTS. Three engines are available: Qwen3-TTS (requires voice sample + transcript), Chatterbox (requires voice sample only, adds emotion control), and MLX TTS (Apple Silicon).
+
+    Voice themes provide an alternative — pass `--voice-theme` to select from 16 pre-defined voices without supplying any audio files. The generated profile is saved to `voice_profile/` and reused on subsequent runs.
+
+    Each segment is saved individually (`seg_0001.wav`, `seg_0002.wav`, ...) so interrupted runs resume without re-synthesizing completed segments.
+
+    **Inputs:** `subtitles/translated.srt`, voice sample + optional transcript (or `--voice-theme`)
+    **Outputs:** `tts/segments/seg_NNNN.wav`, optionally `voice_profile/voice.wav` and `voice_profile/script.txt`
+  </Step>
+
+  <Step title="Assemble">
+    Places all segment WAVs onto a silence-filled timeline matching the original audio duration. Two post-processing steps run by default: loudness matching (measures the original audio's integrated loudness in LUFS and normalizes the dubbed track to match via ffmpeg `loudnorm`) and background mixing (extracts non-vocal audio using `demucs` when available, otherwise centre-cancel, and mixes it beneath the dubbed voice).
+
+    Disable either with `--no-loudness-match` or `--no-mix-background`. Adjust the background level with `--background-volume` (default `0.15`).
+
+    **Inputs:** `tts/segments/seg_NNNN.wav`, original audio duration, `source/audio.mp3`
+    **Outputs:** `tts/dubbed.wav`
+  </Step>
+
+  <Step title="Subtitle">
+    Burns styled subtitles into the video using the ffmpeg `subtitles` filter and optionally replaces the audio track with the dubbed version in the same encoding pass. Supports font selection (system fonts, local files, or Google Fonts), color and opacity, text positioning, outline, bold, and line spacing. RTL scripts (Arabic, Farsi, Hebrew) are detected automatically.
+
+    **Inputs:** `source/video.mp4`, `subtitles/translated.srt`, optionally `tts/dubbed.wav`
+    **Outputs:** `tts/dubbed.mp4`
+
+    ```bash
+    mazinger subtitle video.mp4 --srt translated.srt -o output.mp4
+    ```
+  </Step>
+</Steps>
+
+## Data flow
+
+Each stage produces outputs that the next stage consumes. The table below shows what each stage writes to disk.
+
+| Stage | Key outputs |
+|-------|-------------|
+| Download | `source/video.mp4`, `source/audio.mp3` |
+| Transcribe | `transcription/source.raw.srt`, `transcription/source.srt` |
+| Thumbnails | `thumbnails/thumb_NNN_Xs.jpg`, `thumbnails/meta.json` |
+| Describe | `analysis/description.json` |
+| Review | `transcription/source.reviewed.srt` |
+| Translate | `transcription/translated.raw.srt` |
+| Re-segment | `subtitles/translated.srt` |
+| Speak | `tts/segments/seg_NNNN.wav` |
+| Assemble | `tts/dubbed.wav` |
+| Subtitle | `tts/dubbed.mp4` |
+
+LLM stages (thumbnails, describe, review, translate, re-segment) record their token usage. After the pipeline completes, a summary is logged and the raw records are saved to `llm_usage.json`.
+
+## Resume and caching
+
+Every stage checks whether its output files already exist before running. If they do, the stage is skipped entirely. TTS synthesis is more granular — individual segment WAVs are checked, so a run interrupted at segment 150 of 300 resumes from segment 151.
+
+| Behavior | How to get it |
+|----------|--------------|
+| Resume from where you left off | Re-run the same command (default) |
+| Start completely fresh | Add `--force-reset` |
+
+`--force-reset` works with both `dub` and `speak`. In the Python API, pass `force_reset=True` to `dub()`.
+
+<Note>
+  `--force-reset` deletes all cached outputs for the project and re-runs every stage from scratch. Use it when you have changed a source file or voice sample and need a clean run.
+</Note>
+
+## Running stages individually
+
+Every stage has its own CLI sub-command. You can run any stage in isolation by pointing it at the relevant inputs:
+
+```bash
+mazinger download   "https://youtube.com/watch?v=VIDEO_ID" --base-dir ./output
+mazinger transcribe ./output/projects/my-video/source/audio.mp3 -o subs.srt
+mazinger translate  --srt subs.srt --target-language French -o translated.srt
+mazinger subtitle   video.mp4 --srt translated.srt -o output.mp4
+mazinger slice      "https://youtube.com/watch?v=VIDEO_ID" --start 00:01:00 --end 00:04:00
+```

@@ -1,0 +1,366 @@
+---
+title: "Mazinger Utility Classes and Functions"
+description: "Reference for LLMUsageTracker (token accounting), ProjectPaths (file layout), and shared utility functions for audio, JSON, images, and filenames."
+---
+
+Mazinger exposes several reusable classes and helper functions that are used internally across all pipeline stages. You can import them directly for custom workflows, logging, or path management without running the full pipeline.
+
+```python
+from mazinger import LLMUsageTracker, ProjectPaths
+from mazinger.utils import sanitize_filename, get_audio_duration, save_json, load_json, image_to_base64, make_image_content
+```
+
+---
+
+## LLMUsageTracker
+
+`LLMUsageTracker` accumulates input and output token counts from every LLM call made during a pipeline run. Pass the same tracker instance to `translate_srt()`, `review_srt()`, `resegment_srt()`, and other LLM-calling functions to collect usage across the entire pipeline. When running through `MazingerDubber`, usage records are also saved to `<project>/llm_usage.json` automatically.
+
+```python
+from mazinger import LLMUsageTracker
+```
+
+### Constructor
+
+```python
+LLMUsageTracker()
+```
+
+No parameters. Creates an empty tracker with an empty `records` list.
+
+### Properties
+
+<ResponseField name="total_input" type="int">
+  Total input (prompt) tokens across all recorded LLM calls.
+</ResponseField>
+
+<ResponseField name="total_output" type="int">
+  Total output (completion) tokens across all recorded LLM calls.
+</ResponseField>
+
+<ResponseField name="total_tokens" type="int">
+  Sum of `total_input` and `total_output`.
+</ResponseField>
+
+<ResponseField name="records" type="list[dict]">
+  Raw list of usage records. Each record is a dict with keys `stage` (str), `model` (str), `input_tokens` (int), and `output_tokens` (int).
+</ResponseField>
+
+### Methods
+
+#### record()
+
+```python
+tracker.record(stage: str, model: str, response) -> None
+```
+
+Extracts token usage from an OpenAI `ChatCompletion` response and appends it to `records`. Silently ignores responses that have no usage data.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `stage` | `str` | Pipeline stage name, e.g. `"translate"`, `"thumbnails"` |
+| `model` | `str` | Model identifier used for the call |
+| `response` | `ChatCompletion` | The response object returned by the OpenAI client |
+
+#### report()
+
+```python
+tracker.report() -> str
+```
+
+Returns a human-readable multi-line usage report grouped by stage, including call counts and token totals. Returns `"LLM Usage: (no calls recorded)"` when no records exist.
+
+#### summary_by_stage()
+
+```python
+tracker.summary_by_stage() -> dict[str, dict]
+```
+
+Returns usage aggregated by stage. Each value is a dict with keys `model` (str), `calls` (int), `input_tokens` (int), and `output_tokens` (int).
+
+### Usage example
+
+```python
+from openai import OpenAI
+from mazinger import LLMUsageTracker
+from mazinger.translate import translate_srt
+from mazinger.review import review_srt
+
+client = OpenAI(api_key="sk-...")
+tracker = LLMUsageTracker()
+
+# Pass the tracker to each LLM-calling function
+reviewed = review_srt(
+    srt_text, description, client, usage_tracker=tracker,
+)
+
+translated = translate_srt(
+    reviewed, description, thumbs, client,
+    target_language="Spanish",
+    usage_tracker=tracker,
+)
+
+# Inspect accumulated usage
+print(tracker.report())
+# ═══ LLM Usage Report ═══
+#   review           model=gpt-4.1   calls=3  in=  12,450  out=   8,210
+#   translate        model=gpt-4.1   calls=8  in=  48,320  out=  22,180
+#   ────────────────────────────────────────────────────────────────────────
+#   TOTAL            ...             calls=11 in=  60,770  out=  30,390
+
+print(tracker.total_tokens)          # 91160
+print(tracker.total_input)           # 60770
+print(tracker.total_output)          # 30390
+
+by_stage = tracker.summary_by_stage()
+print(by_stage["translate"]["calls"])  # 8
+```
+
+---
+
+## ProjectPaths
+
+`ProjectPaths` manages every file and directory path for a single dubbing project. It is returned by `MazingerDubber.dub()` and can also be instantiated directly for custom workflows or inspection.
+
+```python
+from mazinger import ProjectPaths
+```
+
+### Constructor
+
+```python
+ProjectPaths(
+    slug: str,
+    base_dir: str = "./mazinger_output",
+    target_language: str | None = None,
+)
+```
+
+<ParamField path="slug" type="str" required>
+  Project identifier. Used as the directory name under `<base_dir>/projects/`.
+</ParamField>
+
+<ParamField path="base_dir" type="str" default="./mazinger_output">
+  Root directory for all projects.
+</ParamField>
+
+<ParamField path="target_language" type="str | None" default="None">
+  Target language for the dubbing. When provided, language-scoped paths (TTS output, translated SRT, voice profile) are placed under `lang/<language>/`. When `None`, falls back to a flat layout under the project root (legacy mode).
+</ParamField>
+
+### Directory layout
+
+```
+<base_dir>/projects/<slug>/
+├── source/
+│   ├── video.mp4
+│   ├── audio.mp3
+│   ├── video_meta.json
+│   └── youtube_subs/
+├── transcription/
+│   ├── source.srt
+│   ├── source.raw.srt
+│   └── source.reviewed.srt
+├── thumbnails/
+│   └── meta.json
+├── analysis/
+│   └── description.json
+└── lang/<language>/
+    ├── transcription/
+    │   └── translated.raw.srt
+    ├── subtitles/
+    │   └── translated.srt
+    ├── tts/
+    │   ├── dubbed.wav
+    │   ├── dubbed.mp4
+    │   └── segments/
+    └── voice_profile/
+        ├── voice.wav
+        └── script.txt
+```
+
+### Shared path properties
+
+These paths are language-independent and shared across all target languages for the same project.
+
+| Property | Path |
+|---|---|
+| `root` | `<base_dir>/projects/<slug>/` |
+| `source_dir` | `source/` |
+| `video` | `source/video.mp4` |
+| `audio` | `source/audio.mp3` |
+| `video_meta` | `source/video_meta.json` |
+| `youtube_subs_dir` | `source/youtube_subs/` |
+| `transcription_dir` | `transcription/` |
+| `source_srt` | `transcription/source.srt` |
+| `source_raw_srt` | `transcription/source.raw.srt` |
+| `reviewed_srt` | `transcription/source.reviewed.srt` |
+| `thumbnails_dir` | `thumbnails/` |
+| `thumbs_meta` | `thumbnails/meta.json` |
+| `analysis_dir` | `analysis/` |
+| `description` | `analysis/description.json` |
+
+### Language-scoped path properties
+
+These paths are placed under `lang/<target_language>/` when a target language is set.
+
+| Property | Path |
+|---|---|
+| `translated_raw_srt` | `lang/<language>/transcription/translated.raw.srt` |
+| `subtitles_dir` | `lang/<language>/subtitles/` |
+| `final_srt` | `lang/<language>/subtitles/translated.srt` |
+| `tts_dir` | `lang/<language>/tts/` |
+| `final_audio` | `lang/<language>/tts/dubbed.wav` |
+| `final_video` | `lang/<language>/tts/dubbed.mp4` |
+| `tts_segments_dir` | `lang/<language>/tts/segments/` |
+| `voice_profile_dir` | `lang/<language>/voice_profile/` |
+
+### Methods
+
+#### ensure_dirs()
+
+```python
+proj.ensure_dirs() -> ProjectPaths
+```
+
+Creates all project subdirectories (idempotent — safe to call multiple times). Returns `self` for method chaining.
+
+#### summary()
+
+```python
+proj.summary() -> str
+```
+
+Returns a human-readable checklist showing which project files exist on disk. Useful for inspecting pipeline progress.
+
+```
+Project: my-video-title
+  Root: ./mazinger_output/projects/my-video-title
+  Language: Spanish
+  [x] source/video.mp4
+  [x] source/audio.mp3
+  [ ] source/video_meta.json
+  [x] transcription/source.srt
+  [x] transcription/source.raw.srt
+  [x] lang/Spanish/transcription/translated.raw.srt
+  [x] lang/Spanish/subtitles/translated.srt
+  ...
+```
+
+### Usage example
+
+```python
+from mazinger import ProjectPaths
+
+proj = ProjectPaths("my-video", base_dir="./output", target_language="Spanish")
+proj.ensure_dirs()
+
+print(proj.root)            # ./output/projects/my-video
+print(proj.audio)           # ./output/projects/my-video/source/audio.mp3
+print(proj.final_srt)       # ./output/projects/my-video/lang/Spanish/subtitles/translated.srt
+print(proj.final_audio)     # ./output/projects/my-video/lang/Spanish/tts/dubbed.wav
+print(proj.summary())
+```
+
+---
+
+## Utility functions
+
+### sanitize_filename
+
+```python
+from mazinger.utils import sanitize_filename
+
+sanitize_filename(title: str) -> str
+```
+
+Normalises a human-readable title into a filesystem-safe slug using python-slugify. Unicode characters are preserved where possible.
+
+```python
+slug = sanitize_filename("My Video Title! (2024)")
+# "my-video-title-2024"
+
+slug = sanitize_filename("مرحبا بالعالم")
+# "mrhba-balalm"  (transliterated)
+```
+
+### get_audio_duration
+
+```python
+from mazinger.utils import get_audio_duration
+
+get_audio_duration(path: str) -> float
+```
+
+Returns the duration of an audio or video file in seconds as a float. Requires `ffprobe` (bundled with ffmpeg) to be on the system path.
+
+```python
+duration = get_audio_duration("audio.mp3")
+print(f"{duration:.2f}s")  # e.g. "183.42s"
+```
+
+### save_json / load_json
+
+```python
+from mazinger.utils import save_json, load_json
+
+save_json(data: object, path: str) -> None
+load_json(path: str) -> object
+```
+
+`save_json` writes `data` as pretty-printed JSON, creating parent directories as needed. `load_json` reads and parses a JSON file. Both handle UTF-8 encoding.
+
+```python
+save_json({"title": "My Video", "lang": "es"}, "meta.json")
+data = load_json("meta.json")
+print(data["title"])  # "My Video"
+```
+
+### image_to_base64
+
+```python
+from mazinger.utils import image_to_base64
+
+image_to_base64(path: str) -> str
+```
+
+Reads an image file and returns its base-64 encoded string. Useful for embedding images in API payloads.
+
+```python
+b64 = image_to_base64("thumbnail.jpg")
+```
+
+### make_image_content
+
+```python
+from mazinger.utils import make_image_content
+
+make_image_content(path: str, detail: str = "low") -> dict
+```
+
+Builds an OpenAI vision-compatible `image_url` content block from a local image file. The returned dict can be inserted directly into a `messages` array for multimodal LLM calls.
+
+`detail` accepts `"low"` (faster, cheaper) or `"high"` (more accurate, higher cost).
+
+```python
+content = make_image_content("thumbnail.jpg", detail="low")
+# {
+#   "type": "image_url",
+#   "image_url": {
+#     "url": "data:image/jpeg;base64,...",
+#     "detail": "low"
+#   }
+# }
+
+# Use in a chat completion
+response = client.chat.completions.create(
+    model="gpt-4.1",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this image."},
+            make_image_content("thumbnail.jpg"),
+        ],
+    }],
+)
+```

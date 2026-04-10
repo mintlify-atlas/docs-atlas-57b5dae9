@@ -1,0 +1,114 @@
+---
+title: "mazinger translate — Translate SRT to Target Language"
+description: "Translate SRT subtitle files into another language with duration-aware word budgets, and optionally burn the result into a video in one step."
+---
+
+The `translate` command takes an SRT file and produces a translated version in the target language. Translation is performed by an LLM and is duration-aware: each subtitle entry receives a word budget calculated from its time window and the configured speech rate, so dubbed audio won't overflow its slot. When `--embed-subtitles` is passed, the translated SRT is resegmented for readability and burned directly into a video.
+
+You can pass a `source` URL or local video path for automatic download and transcription, or supply an existing SRT file with `--srt`.
+
+## Usage
+
+```bash
+mazinger translate [source] [options]
+```
+
+If `source` is provided, the video is downloaded and transcribed automatically before translation.
+
+## Global Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base-dir` | `./mazinger_output` | Root directory for project output |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--srt` | — | Path to the source SRT (overrides auto-transcription from source) |
+| `--description` | — | Path to a description JSON file (improves translation quality) |
+| `--thumbnails-meta` | — | Path to a thumbnails `meta.json` file |
+| `-o`, `--output` | project translated SRT | Output SRT file path |
+| `--source-language` | `auto` | Source language or `auto` to detect |
+| `--target-language` | `English` | Target language for translation |
+| `--words-per-second` | `2.0` | Speech rate used to compute per-entry word budgets |
+| `--duration-budget` | `0.80` | Fraction of each subtitle's time window allocated to dubbed speech (0.0–1.0) |
+| `--translate-technical-terms` | off | Translate technical terms into the target language (default: preserve them) |
+| `--video` | — | Source video path for subtitle embedding (overrides project video) |
+| `--video-output` | — | Output video path when `--embed-subtitles` is set |
+| `--embed-subtitles` | off | Burn the translated subtitles into the video after translation |
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model for translation |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+| `--transcribe-method` | `faster-whisper` | Transcription backend if auto-transcribing: `openai`, `faster-whisper`, `whisperx`, or `mlx-whisper` |
+| `--whisper-model` | varies | Whisper model name (for local backends) |
+| `--mlx-whisper-model` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model name |
+| `--beam-size` | `5` | Beam size for Whisper decoding |
+| `--slug` | auto-generated | Project slug |
+| `--quality` | best available | Video download quality when using a URL source |
+| `--cookies-from-browser` | — | Browser name for yt-dlp cookie extraction |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+
+## Subtitle Styling Flags
+
+All `--subtitle-*` flags apply when `--embed-subtitles` is set.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--subtitle-font` | `Arial` | Font family name |
+| `--subtitle-font-file` | — | Path to a local TTF/OTF font file |
+| `--subtitle-google-font` | — | Google Font name (e.g. `Noto Sans Arabic`) — downloaded automatically |
+| `--subtitle-font-size` | `14` | Font size in pixels |
+| `--subtitle-font-color` | `white` | Text color — name or `#RRGGBB` |
+| `--subtitle-bg-color` | `black` | Background box color |
+| `--subtitle-bg-alpha` | `0.6` | Background opacity (0.0–1.0) |
+| `--subtitle-outline-color` | `black` | Text outline color |
+| `--subtitle-outline-width` | `1` | Outline thickness in pixels |
+| `--subtitle-position` | `bottom` | `top`, `center`, or `bottom` |
+| `--subtitle-margin` | `20` | Vertical margin from edge in pixels |
+| `--subtitle-bold` | off | Use bold text |
+| `--subtitle-line-spacing` | `8` | Extra vertical spacing between wrapped lines in pixels |
+
+## Examples
+
+```bash
+# Translate an existing SRT to French
+mazinger translate --srt subs.srt --target-language French -o translated.srt
+
+# Full auto: download, transcribe, translate to Arabic
+mazinger translate "https://youtube.com/watch?v=abc123" \
+    --target-language Arabic
+
+# Translate and burn subtitles into a video in one step
+mazinger translate "https://youtube.com/watch?v=abc123" \
+    --target-language Arabic \
+    --embed-subtitles \
+    --subtitle-google-font "Noto Sans Arabic" \
+    --subtitle-font-size 24
+
+# Tighter word budget for a fast-talking speaker
+mazinger translate --srt subs.srt \
+    --target-language Spanish \
+    --words-per-second 2.5 \
+    --duration-budget 0.75 \
+    -o es.srt
+
+# Use a local video with custom subtitle styling
+mazinger translate ./lecture.mp4 \
+    --target-language German \
+    --embed-subtitles \
+    --video-output ./lecture-de.mp4 \
+    --subtitle-font-size 20 \
+    --subtitle-bold \
+    --subtitle-position bottom
+```
+
+<Tip>
+When burning subtitles for non-Latin scripts (Arabic, CJK, Hindi, Thai, etc.), use `--subtitle-google-font` with the appropriate Noto font. Mazinger downloads and caches it automatically and handles RTL rendering for Arabic, Farsi, and Hebrew.
+</Tip>
+
+<Note>
+When `--embed-subtitles` is set, the translated SRT is automatically resegmented for readability before it is burned into the video. The original translation is still saved at the path given by `-o`.
+</Note>

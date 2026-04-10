@@ -1,0 +1,180 @@
+---
+title: "mazinger dub — Run the Full End-to-End Dubbing Pipeline"
+description: "Run the complete end-to-end dubbing pipeline: download, transcribe, translate, synthesize TTS audio, and assemble a final video or audio output."
+---
+
+The `dub` command is the primary entry point for Mazinger. Given a video URL or local file, it handles every stage automatically: downloading, transcription, translation, voice-cloned TTS synthesis, audio assembly, and optional video muxing with burned-in subtitles. Most flags have sensible defaults, so a minimal invocation requires only a source and a target language.
+
+## Usage
+
+```bash
+mazinger dub <source> [options]
+```
+
+`source` is required and accepts a video URL (YouTube, etc.), a local video file, or a local audio file.
+
+## Global Flags
+
+Available on every `mazinger` command:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base-dir` | `./mazinger_output` | Root directory for all project output folders |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+## Voice Flags
+
+Control which voice is used for TTS synthesis. Exactly one voice source is required — `--clone-profile`, `--voice-theme`, or `--voice-sample` + `--voice-script`.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--clone-profile` | — | HuggingFace profile name (e.g. `abubakr`) or path to a local directory containing `voice.wav` + `script.txt` |
+| `--voice-theme` | — | Pre-defined voice theme (e.g. `narrator-m`, `warm-f`). Run `mazinger profile list` for all options |
+| `--voice-sample` | — | Path to a reference voice audio file |
+| `--voice-script` | — | Path to a transcript of the voice sample, or inline text |
+
+<Tip>
+Omitting all voice flags triggers **auto-clone**: Mazinger automatically extracts a voice sample from the source video to use as the reference. This is the simplest way to get started.
+</Tip>
+
+## Transcription Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--transcribe-method` | `faster-whisper` | Backend: `openai`, `faster-whisper`, `whisperx`, or `mlx-whisper` |
+| `--whisper-model` | varies | Whisper model name (`whisper-1` for OpenAI; `large-v3` for local backends) |
+| `--mlx-whisper-model` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model (Apple Silicon only) |
+| `--beam-size` | — | Beam size for decoding (faster-whisper / whisperx). Leave unset for `mlx-whisper` |
+| `--device` | `auto` | Compute device: `auto`, `cuda`, or `cpu` |
+| `--asr-review` | off | Review the ASR transcript with an LLM to fix typos and punctuation |
+| `--keep-technical-english` | off | Convert technical terms to English in the source transcript (requires `--asr-review`) |
+| `--youtube-subs` | off | Download YouTube subtitles and compare with ASR to choose the better source |
+| `--use-resegmented` | off | Translate from the resegmented SRT instead of the raw transcript |
+
+## Translation Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--source-language` | `auto` | Source language or `auto` to detect |
+| `--target-language` | `English` | Target language for translation |
+| `--words-per-second` | `2.0` | Speech rate used for duration-aware word budgets |
+| `--duration-budget` | `0.80` | Fraction of each subtitle's time window allocated to dubbed speech (0.0–1.0) |
+| `--translate-technical-terms` | off | Translate technical terms into the target language (default: keep them in source language) |
+
+## TTS Engine Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--tts-engine` | `qwen` | Engine: `qwen` (Qwen3-TTS), `chatterbox` (ResembleAI), or `mlx` (Apple Silicon) |
+| `--tts-model` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | Qwen TTS model ID |
+| `--mlx-tts-model` | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16` | MLX Qwen3-TTS model name |
+| `--chatterbox-model` | `ResembleAI/chatterbox` | Chatterbox model ID |
+| `--tts-language` | same as `--target-language` | Language hint passed to TTS engine |
+| `--chatterbox-exaggeration` | `0.5` | Emotion intensity for Chatterbox (0.0–1.0) |
+| `--chatterbox-cfg` | `0.5` | Pacing / CFG weight for Chatterbox (0.0–1.0) |
+
+## Output Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--output-type` | `audio` | `audio` (WAV) or `video` (muxed MP4) |
+| `--embed-subtitles` | off | Burn subtitles into the output video (implies `--output-type video`) |
+| `--subtitle-source` | `translated` | Subtitle source: `translated`, `original`, or a path to a custom SRT file |
+| `--no-loudness-match` | off | Skip loudness normalisation against the original audio |
+| `--mix-background` | off | Extract and mix background audio from the original video |
+| `--background-volume` | `0.15` | Background audio mix level (0.0–1.0) |
+| `--slug` | auto-generated | Project slug (directory name under `--base-dir`) |
+| `--quality` | best available | Video download quality: `low`, `medium`, `high`, or a numeric height (e.g. `1080`) |
+| `--cookies-from-browser` | — | Browser name for yt-dlp cookie extraction |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+| `--start` | — | Start timestamp for slicing (e.g. `00:01:30` or `90`) |
+| `--end` | — | End timestamp for slicing (e.g. `00:05:00` or `300`) |
+| `--force-reset` | off | Discard all cached outputs and re-run every stage from scratch |
+
+## Advanced / Segmentation Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--segment-mode` | `short` | `short` (LLM resegmentation), `long` (8–30 s chunks, no LLM cost), or `auto` |
+| `--min-segment-duration` | `8.0` | Minimum chunk duration in seconds for `long` mode |
+| `--max-segment-duration` | `30.0` | Maximum chunk duration in seconds for `long` mode |
+| `--dynamic-tempo` | off | Enable per-segment dynamic tempo matching |
+| `--fixed-tempo` | — | Apply a constant speed multiplier to all segments (e.g. `1.1`) |
+| `--max-tempo` | `1.5` | Maximum speed-up factor for dynamic or auto tempo |
+
+## LLM / API Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model for translation and analysis |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode (use `--no-llm-think` with Ollama Qwen3) |
+
+## Subtitle Styling Flags
+
+All `--subtitle-*` flags are accepted when `--embed-subtitles` is set.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--subtitle-font` | `Arial` | Font family name |
+| `--subtitle-font-file` | — | Path to a local TTF/OTF font file |
+| `--subtitle-google-font` | — | Google Font name (e.g. `Noto Sans Arabic`) — downloaded automatically |
+| `--subtitle-font-size` | `14` | Font size in pixels |
+| `--subtitle-font-color` | `white` | Text color — name or `#RRGGBB` |
+| `--subtitle-bg-color` | `black` | Background box color |
+| `--subtitle-bg-alpha` | `0.6` | Background opacity (0.0–1.0) |
+| `--subtitle-outline-color` | `black` | Text outline color |
+| `--subtitle-outline-width` | `1` | Outline thickness in pixels |
+| `--subtitle-position` | `bottom` | `top`, `center`, or `bottom` |
+| `--subtitle-margin` | `20` | Vertical margin from edge in pixels |
+| `--subtitle-bold` | off | Use bold text |
+| `--subtitle-line-spacing` | `8` | Extra vertical space between wrapped lines in pixels |
+
+## Examples
+
+```bash
+# Auto-clone the speaker's voice (simplest — no voice flags needed)
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --target-language Spanish
+
+# Dub with a voice theme
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --voice-theme narrator-m --target-language Spanish
+
+# Dub with a HuggingFace clone profile
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --clone-profile abubakr --target-language Arabic
+
+# Chatterbox engine, video output with burned-in subtitles
+mazinger dub ./lecture.mp4 \
+    --voice-sample speaker.m4a \
+    --tts-engine chatterbox \
+    --output-type video \
+    --embed-subtitles \
+    --target-language Spanish
+
+# Dub only a segment of the video
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --clone-profile abubakr --target-language Arabic \
+    --start 00:01:30 --end 00:05:00
+
+# Local transcription with dynamic tempo
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --clone-profile abubakr \
+    --transcribe-method faster-whisper \
+    --dynamic-tempo --max-tempo 1.3
+
+# Generate a profile first, then use it with Arabic subtitles
+mazinger profile generate narrator-m Arabic -o ./my-narrator
+mazinger dub "https://youtube.com/watch?v=abc123" \
+    --clone-profile ./my-narrator \
+    --target-language Arabic \
+    --output-type video \
+    --embed-subtitles \
+    --subtitle-google-font "Noto Sans Arabic"
+```
+
+<Note>
+All intermediate outputs (downloaded video, transcription SRT, translated SRT, TTS segments) are cached under `--base-dir/<slug>/`. Re-running the same command skips completed stages unless `--force-reset` is passed.
+</Note>

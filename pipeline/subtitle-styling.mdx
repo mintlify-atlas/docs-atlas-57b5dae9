@@ -1,0 +1,232 @@
+---
+title: "Subtitle Styling Options in Mazinger Dubber"
+description: "Burn styled subtitles into video with full control over fonts, colors, opacity, positioning, outline, RTL detection, and Google Fonts — via CLI flags or Python API."
+---
+
+Mazinger burns subtitles into video using the ffmpeg `subtitles` filter with ASS `force_style` overrides. Every styling option is available as a `--subtitle-*` CLI flag and as a field on the `SubtitleStyle` dataclass. Long entries are automatically split across shorter display segments before burning, and RTL scripts (Arabic, Farsi, Hebrew) are detected and handled without any manual configuration.
+
+## Styling options
+
+The table below lists every available option, its CLI flag, corresponding Python field, default value, and description.
+
+| CLI flag | Python field | Default | Description |
+|----------|-------------|---------|-------------|
+| `--subtitle-font` | `font` | `Arial` | Font family name (must be installed on the system or provided via `--subtitle-font-file`) |
+| `--subtitle-font-file` | `font_file` | — | Path to a local TTF or OTF file |
+| `--subtitle-google-font` | *(CLI only)* | — | Google Font name — downloaded and cached automatically |
+| `--subtitle-font-size` | `font_size` | `14` | Font size in pixels |
+| `--subtitle-font-color` | `font_color` | `white` | Text color — named color or `#RRGGBB` hex |
+| `--subtitle-bg-color` | `bg_color` | `black` | Background box color |
+| `--subtitle-bg-alpha` | `bg_alpha` | `0.6` | Background opacity (0.0 = transparent, 1.0 = opaque) |
+| `--subtitle-outline-color` | `outline_color` | `black` | Text outline color |
+| `--subtitle-outline-width` | `outline_width` | `1` | Outline thickness in pixels |
+| `--subtitle-position` | `position` | `bottom` | `top`, `center`, or `bottom` |
+| `--subtitle-margin` | `margin_v` | `20` | Vertical margin from the edge in pixels |
+| `--subtitle-bold` | `bold` | `False` | Bold text |
+| `--subtitle-line-spacing` | `line_spacing` | `8` | Extra vertical space between wrapped lines in pixels |
+
+**Supported color names:** `white`, `black`, `yellow`, `red`, `green`, `blue`, `cyan`, `magenta`, `gray`. Any `#RRGGBB` hex value also works.
+
+## Font selection
+
+Three methods are available, in order of priority: a Google Font download, a local font file, or a system font.
+
+<Tabs>
+  <Tab title="Google Font">
+    The recommended approach for non-Latin scripts. The font is downloaded from Google Fonts and cached in `/tmp/mazinger-fonts/`. This is the easiest way to get correct rendering for Arabic, CJK, Hindi, Thai, and other non-Latin scripts.
+
+    ```bash
+    mazinger subtitle video.mp4 --srt translated.srt -o output.mp4 \
+        --subtitle-google-font "Noto Sans Arabic" \
+        --subtitle-font-size 24
+    ```
+  </Tab>
+  <Tab title="Local font file">
+    Point to a TTF or OTF file on disk. The font family name is auto-detected from the file metadata.
+
+    ```bash
+    mazinger subtitle video.mp4 --srt translated.srt -o output.mp4 \
+        --subtitle-font-file /path/to/MyFont-Regular.ttf
+    ```
+  </Tab>
+  <Tab title="System font">
+    Use any font installed on the system and visible to ffmpeg and fontconfig.
+
+    ```bash
+    mazinger subtitle video.mp4 --srt translated.srt -o output.mp4 \
+        --subtitle-font "DejaVu Sans"
+    ```
+  </Tab>
+</Tabs>
+
+## Python API
+
+### SubtitleStyle fields
+
+<ParamField path="font" type="string" default="Arial">
+  Font family name. Must be installed on the system or overridden by `font_file`. Auto-detected from the font file metadata when `font_file` is provided and `font` is still at its default.
+</ParamField>
+
+<ParamField path="font_file" type="string">
+  Path to a local TTF or OTF file. When set, ffmpeg uses the file's directory as a `fontsdir` so the font does not need to be installed system-wide.
+</ParamField>
+
+<ParamField path="font_size" type="int" default="14">
+  Font size in pixels.
+</ParamField>
+
+<ParamField path="font_color" type="string" default="white">
+  Text color as a named color (`white`, `yellow`, `black`, etc.) or `#RRGGBB` hex string.
+</ParamField>
+
+<ParamField path="bg_color" type="string" default="black">
+  Background box color as a named color or `#RRGGBB` hex string.
+</ParamField>
+
+<ParamField path="bg_alpha" type="float" default="0.6">
+  Background box opacity from `0.0` (fully transparent) to `1.0` (fully opaque).
+</ParamField>
+
+<ParamField path="outline_color" type="string" default="black">
+  Text outline color as a named color or `#RRGGBB` hex string.
+</ParamField>
+
+<ParamField path="outline_width" type="int" default="1">
+  Outline thickness in pixels. Set to `0` to remove the outline.
+</ParamField>
+
+<ParamField path="position" type="string" default="bottom">
+  Vertical placement of the subtitle box. Accepts `"bottom"`, `"center"`, or `"top"`.
+</ParamField>
+
+<ParamField path="margin_v" type="int" default="20">
+  Vertical margin from the edge of the frame in pixels. Controls how far from the top or bottom the subtitle box is placed.
+</ParamField>
+
+<ParamField path="bold" type="boolean" default="false">
+  Render text in bold weight.
+</ParamField>
+
+<ParamField path="line_spacing" type="int" default="8">
+  Extra vertical space inserted between wrapped lines in pixels. Implemented via a transparent spacer line in the ASS output.
+</ParamField>
+
+### burn_subtitles
+
+```python
+from mazinger.subtitle import SubtitleStyle, burn_subtitles, download_google_font
+
+style = SubtitleStyle(
+    font="DejaVu Sans",
+    font_size=28,
+    font_color="yellow",
+    bg_color="black",
+    bg_alpha=0.8,
+    position="bottom",
+    bold=True,
+    line_spacing=10,
+)
+
+burn_subtitles("video.mp4", "output.mp4", "translated.srt", style)
+```
+
+Pass `audio_path` to replace the audio track in the same encoding pass:
+
+```python
+burn_subtitles(
+    "video.mp4", "output.mp4", "translated.srt", style,
+    audio_path="dubbed.wav",
+)
+```
+
+### download_google_font
+
+Downloads a Google Font by name and returns the path to a local TTF or OTF file. Results are cached under `/tmp/mazinger-fonts/` (or a custom `cache_dir`) and reused on subsequent calls.
+
+```python
+font_path = download_google_font("Noto Sans Arabic")
+style = SubtitleStyle(font_file=font_path, font_size=24)
+burn_subtitles("video.mp4", "output.mp4", "translated.srt", style)
+```
+
+## RTL support
+
+Mazinger detects Arabic, Farsi (Persian), and Hebrew characters in subtitle text and automatically inserts Unicode directional markers (RLE/PDF) so that right-to-left text renders correctly in the ffmpeg subtitle filter. No manual configuration is needed.
+
+When RTL text is detected and no custom font has been provided (the font is still at the default `Arial`), Mazinger automatically downloads Noto Sans Arabic for correct glyph rendering.
+
+```bash
+mazinger subtitle video.mp4 --srt arabic.srt -o output.mp4 \
+    --subtitle-google-font "Noto Sans Arabic" \
+    --subtitle-font-size 24 \
+    --subtitle-font-color yellow
+```
+
+## Display splitting
+
+Long subtitle entries are automatically split across multiple shorter entries before burning. The split threshold is 120 characters. Lines are broken at sentence boundaries first, then clause boundaries, then word boundaries as a last resort — so no word is ever cut in half. The original timing window is divided proportionally among the resulting segments.
+
+## Examples
+
+<AccordionGroup>
+  <Accordion title="Clean white text on a semi-transparent black box">
+    ```bash
+    mazinger subtitle video.mp4 --srt subs.srt -o output.mp4 \
+        --subtitle-font-size 20 \
+        --subtitle-font-color white \
+        --subtitle-bg-color black \
+        --subtitle-bg-alpha 0.6
+    ```
+  </Accordion>
+  <Accordion title="Bold yellow text with a fully opaque background">
+    ```bash
+    mazinger subtitle video.mp4 --srt subs.srt -o output.mp4 \
+        --subtitle-font-size 24 \
+        --subtitle-font-color yellow \
+        --subtitle-bg-color black \
+        --subtitle-bg-alpha 0.9 \
+        --subtitle-bold
+    ```
+  </Accordion>
+  <Accordion title="Top-positioned subtitles">
+    ```bash
+    mazinger subtitle video.mp4 --srt subs.srt -o output.mp4 \
+        --subtitle-position top \
+        --subtitle-margin 30
+    ```
+  </Accordion>
+  <Accordion title="Arabic subtitles with Noto Sans">
+    ```bash
+    mazinger subtitle video.mp4 --srt arabic.srt -o output.mp4 \
+        --subtitle-google-font "Noto Sans Arabic" \
+        --subtitle-font-size 24 \
+        --subtitle-font-color yellow \
+        --subtitle-bg-color black \
+        --subtitle-bg-alpha 0.9 \
+        --subtitle-bold
+    ```
+  </Accordion>
+  <Accordion title="Python: full styled burn with custom font and audio replacement">
+    ```python
+    from mazinger.subtitle import SubtitleStyle, burn_subtitles, download_google_font
+
+    font_path = download_google_font("Noto Sans Arabic")
+
+    style = SubtitleStyle(
+        font_file=font_path,
+        font_size=24,
+        font_color="yellow",
+        bg_color="black",
+        bg_alpha=0.9,
+        position="bottom",
+        bold=True,
+        line_spacing=10,
+    )
+
+    burn_subtitles(
+        "source.mp4", "dubbed.mp4", "arabic.srt", style,
+        audio_path="dubbed.wav",
+    )
+    ```
+  </Accordion>
+</AccordionGroup>

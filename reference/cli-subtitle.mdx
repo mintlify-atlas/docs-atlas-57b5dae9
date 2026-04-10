@@ -1,0 +1,128 @@
+---
+title: "mazinger subtitle — Burn Styled Subtitles into Video"
+description: "Burn SRT subtitles into a video file with full styling control over font, color, position, and background, optionally replacing the audio track."
+---
+
+The `subtitle` command composites an SRT file onto a video using the ffmpeg `subtitles` filter. It handles font selection (system fonts, local TTF/OTF files, or auto-downloaded Google Fonts), positioning, color, background box opacity, and RTL script rendering. You can also swap the audio track in the same pass by providing `--audio`.
+
+If no `--srt` is supplied and a source URL or video path is provided, Mazinger auto-transcribes and auto-translates before burning.
+
+## Usage
+
+```bash
+mazinger subtitle [source] [options]
+```
+
+## Global Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base-dir` | `./mazinger_output` | Root directory for project output |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+## Input / Output Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--video` | — | Path to the source video (overrides auto-resolved project video) |
+| `--srt` | — | Path to the SRT file to burn (overrides auto-translate) |
+| `--audio` | — | Replacement audio track — omit to keep the original audio |
+| `-o`, `--output` | `<video>_subtitled.mp4` | Output video path |
+| `--slug` | auto-generated | Project slug |
+| `--quality` | best available | Video download quality when using a URL source |
+| `--cookies-from-browser` | — | Browser name for yt-dlp cookie extraction |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+
+## Subtitle Styling Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--subtitle-font` | `Arial` | Font family name (must be installed on the system) |
+| `--subtitle-font-file` | — | Path to a local TTF or OTF font file |
+| `--subtitle-google-font` | — | Google Font name (e.g. `Noto Sans Arabic`) — downloaded and cached automatically |
+| `--subtitle-font-size` | `14` | Font size in pixels |
+| `--subtitle-font-color` | `white` | Text color — a color name or `#RRGGBB` hex value |
+| `--subtitle-bg-color` | `black` | Background box color |
+| `--subtitle-bg-alpha` | `0.6` | Background box opacity, 0.0 (transparent) to 1.0 (opaque) |
+| `--subtitle-outline-color` | `black` | Text outline color |
+| `--subtitle-outline-width` | `1` | Outline thickness in pixels |
+| `--subtitle-position` | `bottom` | `top`, `center`, or `bottom` |
+| `--subtitle-margin` | `20` | Vertical margin from the edge in pixels |
+| `--subtitle-bold` | off | Render subtitle text in bold |
+| `--subtitle-line-spacing` | `8` | Extra vertical spacing between wrapped subtitle lines in pixels |
+
+<Note>
+Supported color names: `white`, `black`, `yellow`, `red`, `green`, `blue`, `cyan`, `magenta`, `gray`. Any `#RRGGBB` hex value is also accepted.
+</Note>
+
+## Auto-translation Flags
+
+Used when no `--srt` is given and Mazinger runs auto-transcription + translation.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--source-language` | `auto` | Source language or `auto` to detect |
+| `--target-language` | `English` | Target language for translation |
+| `--words-per-second` | `2.0` | Speech rate for duration-aware word budgets |
+| `--duration-budget` | `0.80` | Fraction of time window allocated to dubbed speech |
+| `--transcribe-method` | `faster-whisper` | Transcription backend: `openai`, `faster-whisper`, `whisperx`, or `mlx-whisper` |
+| `--whisper-model` | varies | Whisper model name |
+| `--mlx-whisper-model` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model name |
+| `--beam-size` | `5` | Beam size for Whisper decoding |
+
+## LLM / API Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model for auto-translation |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+
+## Examples
+
+```bash
+# Burn subtitles, keep original audio
+mazinger subtitle video.mp4 --srt translated.srt -o output.mp4
+
+# Burn subtitles and replace audio track with dubbed WAV
+mazinger subtitle video.mp4 \
+    --srt translated.srt \
+    --audio dubbed.wav \
+    -o output.mp4
+
+# Custom styling: larger bold yellow text on opaque black background
+mazinger subtitle video.mp4 --srt translated.srt -o output.mp4 \
+    --subtitle-font-size 28 \
+    --subtitle-font-color yellow \
+    --subtitle-bg-color black \
+    --subtitle-bg-alpha 0.8 \
+    --subtitle-position bottom \
+    --subtitle-bold
+
+# Arabic subtitles with Noto Sans Arabic via Google Fonts
+mazinger subtitle video.mp4 --srt arabic.srt -o output.mp4 \
+    --subtitle-google-font "Noto Sans Arabic" \
+    --subtitle-font-size 24 \
+    --subtitle-font-color yellow \
+    --subtitle-bg-alpha 0.9 \
+    --subtitle-bold
+
+# Top-positioned captions with extra margin
+mazinger subtitle video.mp4 --srt subs.srt -o output.mp4 \
+    --subtitle-position top \
+    --subtitle-margin 30
+
+# Auto-translate from URL and burn subtitles in one step
+mazinger subtitle "https://youtube.com/watch?v=abc123" \
+    --target-language Spanish \
+    -o output_es.mp4
+```
+
+<Tip>
+For Arabic, Farsi, Hebrew, and other RTL scripts, Mazinger automatically inserts Unicode directional markers so text renders correctly in ffmpeg. No manual configuration is needed — just use an appropriate font.
+</Tip>
+
+<Tip>
+Long subtitle entries are automatically split across multiple display lines at word boundaries before burning. Splitting kicks in above 120 characters.
+</Tip>

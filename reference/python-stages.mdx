@@ -1,0 +1,842 @@
+---
+title: "Mazinger Stage Functions Python Reference"
+description: "Reference for using each Mazinger pipeline stage as a standalone module — download, transcribe, translate, TTS, assemble, subtitle, profiles, and SRT utilities."
+---
+
+Every step of the Mazinger pipeline is implemented as an independent module. You can import and call each stage function directly without going through `MazingerDubber`, which is useful for building custom workflows, processing only part of the pipeline, or integrating individual stages into existing tooling.
+
+---
+
+<AccordionGroup>
+
+<Accordion title="mazinger.download" icon="download">
+
+The download module handles media acquisition from URLs or local files, audio extraction, and time-range slicing.
+
+```python
+from mazinger.download import resolve_slug, download_video, extract_audio
+from mazinger.download import slice_media, slice_project
+```
+
+#### resolve_slug
+
+```python
+resolve_slug(
+    url: str,
+    *,
+    cookies_from_browser: str | None = None,
+    cookies: str | None = None,
+) -> tuple[str, dict]
+```
+
+Fetches video metadata from a URL and derives a filesystem-safe slug from the title.
+
+Returns a `(slug, info_dict)` tuple where `info_dict` is the full yt-dlp metadata dictionary.
+
+```python
+slug, info = resolve_slug("https://youtube.com/watch?v=VIDEO_ID")
+print(slug)  # e.g. "my-video-title"
+```
+
+#### download_video
+
+```python
+download_video(
+    url: str,
+    output_path: str,
+    *,
+    quality: str | None = None,
+    cookies_from_browser: str | None = None,
+    cookies: str | None = None,
+) -> str
+```
+
+Downloads a video from `url` to `output_path`. Skips the download if the file already exists.
+
+`quality` accepts `"low"` (360p), `"medium"` (720p, default), `"high"` (best), or a numeric resolution like `"1080"`.
+
+```python
+download_video(
+    "https://youtube.com/watch?v=VIDEO_ID",
+    "video.mp4",
+    quality="720",
+)
+```
+
+#### extract_audio
+
+```python
+extract_audio(video_path: str, audio_path: str) -> str
+```
+
+Extracts the audio track from `video_path` as an MP3 file. Skips if `audio_path` already exists. Returns `audio_path`.
+
+```python
+extract_audio("video.mp4", "audio.mp3")
+```
+
+#### slice_media
+
+```python
+slice_media(
+    input_path: str,
+    output_path: str,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> str
+```
+
+Extracts a time range from a media file using ffmpeg. Produces frame-accurate cuts by re-encoding at the cut boundaries.
+
+`start` and `end` accept `HH:MM:SS` (e.g. `"00:01:30"`) or plain seconds (e.g. `"90"`).
+
+```python
+# Extract minutes 1:30 to 5:00
+slice_media("video.mp4", "clip.mp4", start="00:01:30", end="00:05:00")
+
+# Same with plain seconds
+slice_media("video.mp4", "clip.mp4", start="90", end="300")
+```
+
+#### slice_project
+
+```python
+slice_project(
+    proj,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> None
+```
+
+Slices the video and/or audio of a `ProjectPaths` instance in-place. After slicing the video, audio is re-extracted from the sliced video to guarantee sync.
+
+```python
+from mazinger import ProjectPaths
+from mazinger.download import slice_project
+
+proj = ProjectPaths("my-video").ensure_dirs()
+slice_project(proj, start="90", end="300")
+```
+
+</Accordion>
+
+<Accordion title="mazinger.transcribe" icon="microphone">
+
+Transcribes audio to SRT using one of four backends: OpenAI Whisper API, faster-whisper (local GPU), WhisperX (local with word alignment), or MLX Whisper (Apple Silicon).
+
+```python
+from mazinger.transcribe import transcribe
+```
+
+#### transcribe
+
+```python
+transcribe(
+    audio_path: str,
+    output_path: str,
+    *,
+    method: str = "faster-whisper",
+    model: str | None = None,
+    mlx_whisper_model: str = "mlx-community/whisper-large-v3-turbo",
+    device: str = "cuda",
+    batch_size: int = 4,
+    compute_type: str = "float16",
+    language: str | None = None,
+    beam_size: int | None = 5,
+    max_chars: int = 84,
+    max_duration: float = 5.0,
+    skip_resegment: bool = False,
+    refine: bool = False,
+    llm_model: str = "gpt-4.1",
+    openai_api_key: str | None = None,
+    openai_base_url: str | None = None,
+    initial_prompt: str | None = None,
+    condition_on_previous_text: bool = True,
+    vad_options: dict | None = None,
+    word_timestamps: bool = True,
+) -> str
+```
+
+Transcribes `audio_path` to SRT and saves it at `output_path`. Also saves a raw (pre-resegmentation) SRT at `<output_path>.raw.srt`. Returns `output_path`.
+
+<Tabs>
+  <Tab title="Cloud (OpenAI)">
+    ```python
+    # Cloud Whisper API — no local GPU required
+    transcribe("audio.mp3", "subtitles.srt", method="openai")
+    ```
+  </Tab>
+  <Tab title="Local GPU (faster-whisper)">
+    ```python
+    # faster-whisper: 4× faster than original Whisper
+    transcribe(
+        "audio.mp3", "subtitles.srt",
+        method="faster-whisper",
+        device="cuda",
+    )
+    ```
+  </Tab>
+  <Tab title="WhisperX">
+    ```python
+    # WhisperX: word-level alignment (requires [transcribe-whisperx])
+    transcribe(
+        "audio.mp3", "subtitles.srt",
+        method="whisperx",
+        device="cuda",
+    )
+    ```
+  </Tab>
+  <Tab title="Apple Silicon (MLX)">
+    ```python
+    # MLX Whisper: native Apple Silicon, no beam search
+    transcribe(
+        "audio.mp3", "subtitles.srt",
+        method="mlx-whisper",
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  `beam_size` is not supported with `mlx-whisper` (which uses sampling-based decoding). Pass `beam_size=None` or omit it when using this backend.
+</Note>
+
+</Accordion>
+
+<Accordion title="mazinger.thumbnails" icon="image">
+
+Selects representative video frames using an LLM and extracts them for use as visual context during translation.
+
+```python
+from mazinger.thumbnails import select_timestamps, extract_frames
+```
+
+#### select_timestamps
+
+```python
+select_timestamps(
+    srt_text: str,
+    client,
+    llm_model: str = "gpt-4.1",
+    usage_tracker=None,
+) -> list[dict]
+```
+
+Uses an LLM to choose a diverse set of timestamps from the SRT that best represent the visual content of the video.
+
+#### extract_frames
+
+```python
+extract_frames(
+    video_path: str,
+    timestamps: list[dict],
+    output_dir: str,
+) -> list[dict]
+```
+
+Extracts JPEG frames from `video_path` at the given timestamps and saves them to `output_dir`. Returns a list of metadata dicts, each with `path`, `seconds`, `timestamp`, and `reason` keys.
+
+```python
+from openai import OpenAI
+from mazinger.thumbnails import select_timestamps, extract_frames
+
+client = OpenAI()
+
+with open("subtitles.srt") as f:
+    srt_text = f.read()
+
+timestamps = select_timestamps(srt_text, client)
+frames = extract_frames("video.mp4", timestamps, "./thumbs")
+```
+
+</Accordion>
+
+<Accordion title="mazinger.describe" icon="file-text">
+
+Generates a structured content description from the SRT text and extracted video frames using a vision-capable LLM.
+
+```python
+from mazinger.describe import describe_content
+```
+
+#### describe_content
+
+```python
+describe_content(
+    srt_text: str,
+    thumb_paths: list[dict],
+    client,
+    llm_model: str = "gpt-4.1",
+    video_meta: dict | None = None,
+    usage_tracker=None,
+) -> dict
+```
+
+Returns a dict with keys `title`, `summary`, `keypoints`, `keywords`, and optional fields like `dialect`, `tone`, and `speakers`. This output is passed to `translate_srt()` to provide translation context.
+
+```python
+from mazinger.describe import describe_content
+from mazinger.utils import load_json
+
+thumbs = load_json("./thumbs/meta.json")
+desc = describe_content(srt_text, thumbs, client)
+# Returns: {"title": "...", "summary": "...", "keypoints": [...], "keywords": [...]}
+```
+
+</Accordion>
+
+<Accordion title="mazinger.review" icon="search">
+
+Optionally reviews and corrects the raw ASR transcript using an LLM before translation.
+
+```python
+from mazinger.review import review_srt
+```
+
+#### review_srt
+
+```python
+review_srt(
+    srt_text: str,
+    description: dict,
+    client,
+    *,
+    llm_model: str = "gpt-4.1",
+    source_language: str = "auto",
+    keep_technical_english: bool = False,
+    blocks_per_batch: int = 30,
+    overlap_size: int = 6,
+    usage_tracker=None,
+    video_meta: dict | None = None,
+) -> str
+```
+
+Fixes typos, adds punctuation, and corrects misheard words in the ASR transcript. Returns the corrected SRT string.
+
+```python
+from mazinger.review import review_srt
+
+reviewed = review_srt(
+    srt_text,
+    description=desc,
+    client=client,
+    source_language="auto",
+    keep_technical_english=False,
+)
+```
+
+</Accordion>
+
+<Accordion title="mazinger.translate" icon="languages">
+
+Translates SRT subtitles to a target language using batched LLM calls with visual thumbnail context and duration-budget constraints for dubbing timing.
+
+```python
+from mazinger.translate import translate_srt
+```
+
+#### translate_srt
+
+```python
+translate_srt(
+    srt_text: str,
+    description: dict,
+    thumb_paths: list[dict],
+    client,
+    *,
+    llm_model: str = "gpt-4.1",
+    source_language: str = "auto",
+    target_language: str = "English",
+    blocks_per_batch: int = 24,
+    overlap_size: int = 8,
+    words_per_second: float | None = None,
+    duration_budget: float = 0.85,
+    translate_technical_terms: bool = False,
+    video_meta: dict | None = None,
+    usage_tracker=None,
+) -> str
+```
+
+Translates `srt_text` into `target_language` and returns the translated SRT string. Each translation batch receives surrounding context blocks and video screenshots to improve quality. The `words_per_second` and `duration_budget` parameters control how many words the LLM is allowed to write per subtitle entry to keep dubbed audio within its time slot.
+
+<Tip>
+  33 languages are supported. Pass any of: Arabic, Bengali, Chinese (Simplified), Chinese (Traditional), Czech, Danish, Dutch, English, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Persian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, Urdu, or Vietnamese.
+</Tip>
+
+```python
+from mazinger.translate import translate_srt
+
+translated = translate_srt(
+    srt_text,
+    description=desc,
+    thumb_paths=thumbs,
+    client=client,
+    target_language="Spanish",
+)
+
+with open("translated.srt", "w") as f:
+    f.write(translated)
+```
+
+</Accordion>
+
+<Accordion title="mazinger.resegment" icon="scissors">
+
+Splits or merges translated SRT segments to produce well-phrased, speech-friendly chunks for TTS synthesis.
+
+```python
+from mazinger.resegment import resegment_srt, merge_long_segments
+```
+
+#### resegment_srt
+
+```python
+resegment_srt(
+    srt_text: str,
+    client=None,
+    llm_model: str = "gpt-4.1",
+    max_chars: int = 84,
+    max_dur: float = 4.0,
+    usage_tracker=None,
+) -> str
+```
+
+Splits long subtitle entries into shorter chunks at natural sentence and clause boundaries. When `client` is provided, uses an LLM for phrase-aware splitting; without it, falls back to rule-based merging.
+
+#### merge_long_segments
+
+```python
+merge_long_segments(
+    srt_text: str,
+    source_audio: str | None = None,
+    min_duration: float = 8.0,
+    max_duration: float = 30.0,
+) -> str
+```
+
+Merges very short adjacent segments into longer, more natural phrases for TTS synthesis. Useful when the source SRT has many tiny entries.
+
+```python
+from mazinger.resegment import resegment_srt
+
+# With LLM (phrase-aware)
+final = resegment_srt(srt_text, client=client, max_chars=84, max_dur=4.0)
+
+# Without LLM (rule-based)
+final = resegment_srt(srt_text)
+```
+
+</Accordion>
+
+<Accordion title="mazinger.tts" icon="volume-2">
+
+Voice-cloned text-to-speech synthesis using Qwen3-TTS, Chatterbox, or MLX Qwen3-TTS.
+
+```python
+from mazinger import tts
+```
+
+#### load_model
+
+```python
+tts.load_model(
+    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    device: str = "cuda:0",
+    dtype: str = "bfloat16",
+    engine: str = "qwen",
+    chatterbox_model: str = "ResembleAI/chatterbox",
+    mlx_model: str = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16",
+) -> Any
+```
+
+Loads a TTS model and returns it. Models are cached in memory so repeated calls with the same parameters return instantly.
+
+#### create_voice_prompt
+
+```python
+tts.create_voice_prompt(
+    model,
+    ref_audio: str,
+    ref_text: str | None = None,
+    engine: str = "qwen",
+    chatterbox_exaggeration: float = 0.5,
+    chatterbox_cfg: float = 0.5,
+    mlx_model: str = ...,
+) -> TTSWrapper
+```
+
+Builds a reusable voice-clone prompt from a reference recording. Returns a `TTSWrapper` instance ready for synthesis. When `ref_text` is `None`, Qwen uses x-vector-only mode (no transcript required).
+
+#### synthesize_segments
+
+```python
+tts.synthesize_segments(
+    model,
+    voice_prompt,
+    srt_entries: list[dict],
+    output_dir: str,
+    *,
+    language: str = "English",
+    force_reset: bool = False,
+) -> list[dict]
+```
+
+Generates TTS audio for each SRT entry and saves individual WAV files to `output_dir`. Returns a list of segment info dicts with `idx`, `start`, `end`, `target_dur`, `wav_path`, and `actual_dur` keys. Skips segments whose WAV files already exist unless `force_reset=True`.
+
+#### unload_model
+
+```python
+tts.unload_model(model, *, force: bool = False) -> None
+```
+
+Unloads a TTS model. By default the model is kept in the module-level cache for reuse. Pass `force=True` to actually free GPU memory.
+
+<Tabs>
+  <Tab title="Qwen TTS">
+    ```python
+    from mazinger import tts
+    from mazinger.srt import parse_file
+
+    model = tts.load_model(engine="qwen", device="cuda:0")
+
+    wrapper = tts.create_voice_prompt(
+        model,
+        ref_audio="speaker.wav",
+        ref_text="Transcript of the voice sample.",
+        engine="qwen",
+    )
+
+    entries = parse_file("translated.srt")
+    segments = tts.synthesize_segments(model, wrapper, entries, "./segments")
+
+    tts.unload_model(wrapper, force=True)
+    ```
+  </Tab>
+  <Tab title="Chatterbox">
+    ```python
+    from mazinger import tts
+    from mazinger.srt import parse_file
+
+    model = tts.load_model(engine="chatterbox")
+
+    wrapper = tts.create_voice_prompt(
+        model,
+        ref_audio="speaker.m4a",
+        ref_text="",               # not needed for Chatterbox
+        engine="chatterbox",
+        chatterbox_exaggeration=0.5,
+        chatterbox_cfg=0.5,
+    )
+
+    entries = parse_file("translated.srt")
+    segments = tts.synthesize_segments(
+        model, wrapper, entries, "./segments", language="Spanish",
+    )
+    ```
+  </Tab>
+</Tabs>
+
+</Accordion>
+
+<Accordion title="mazinger.assemble" icon="layers">
+
+Time-aligns TTS segment WAVs against their SRT timestamps and assembles the final dubbed audio track.
+
+```python
+from mazinger.assemble import assemble_timeline, mux_video, post_process
+```
+
+#### assemble_timeline
+
+```python
+assemble_timeline(
+    segment_info: list[dict],
+    original_duration: float,
+    output_path: str,
+    *,
+    sample_rate: int = 24000,
+    speed_threshold: float = 0.05,
+    min_speed_ratio: float = 0.82,
+    target_fill: float = 0.92,
+    tempo_mode: str = "auto",
+    fixed_tempo: float | None = None,
+    max_tempo: float = 1.5,
+    crossfade_ms: int = 50,
+    segment_gap_ms: int = 50,
+) -> str
+```
+
+Places each TTS segment at its SRT start time and applies smart tempo adjustments:
+- **Overflow** — speeds up (up to `max_tempo`) or trims at the quietest point
+- **Under-fill** — slows down toward `target_fill` of the window, floored at `min_speed_ratio`
+
+`tempo_mode` options: `"auto"` (default), `"dynamic"` (alias for auto), `"fixed"`, `"off"`.
+
+#### mux_video
+
+```python
+mux_video(video_path: str, audio_path: str, output_path: str) -> str | None
+```
+
+Replaces the audio track of `video_path` with `audio_path` using ffmpeg. Returns `output_path`, or `None` if ffmpeg is not installed.
+
+#### post_process
+
+```python
+post_process(
+    dubbed_path: str,
+    original_audio: str,
+    output_path: str,
+    *,
+    loudness_match: bool = True,
+    mix_background: bool = True,
+    background_volume: float = 0.15,
+) -> str
+```
+
+Applies loudness normalisation (matching the original LUFS level) and mixes extracted background audio under the dubbed speech.
+
+```python
+from mazinger.assemble import assemble_timeline, mux_video, post_process
+from mazinger.utils import get_audio_duration
+
+duration = get_audio_duration("audio.mp3")
+
+# Auto tempo (default)
+assemble_timeline(segments, duration, "dubbed.wav")
+
+# Fixed tempo (10% faster)
+assemble_timeline(
+    segments, duration, "dubbed.wav",
+    tempo_mode="fixed", fixed_tempo=1.1,
+)
+
+# Post-process: loudness matching + background mixing
+post_process("dubbed.wav", "audio.mp3", "dubbed_final.wav")
+
+# Loudness matching only, no background
+post_process("dubbed.wav", "audio.mp3", "dubbed_final.wav", mix_background=False)
+
+# Mux into video
+mux_video("video.mp4", "dubbed_final.wav", "dubbed.mp4")
+```
+
+</Accordion>
+
+<Accordion title="mazinger.subtitle" icon="subtitles">
+
+Burns subtitles into video using ffmpeg with ASS styling, RTL text support, and automatic Google Font download.
+
+```python
+from mazinger.subtitle import SubtitleStyle, burn_subtitles, download_google_font
+```
+
+#### SubtitleStyle
+
+A dataclass that holds all visual styling for burned-in subtitles.
+
+```python
+@dataclass
+class SubtitleStyle:
+    font: str = "Arial"
+    font_file: str | None = None
+    font_size: int = 14
+    font_color: str = "white"
+    bg_color: str = "black"
+    bg_alpha: float = 0.6
+    outline_color: str = "black"
+    outline_width: int = 1
+    position: str = "bottom"
+    margin_v: int = 20
+    bold: bool = False
+    line_spacing: int = 8
+```
+
+`position` accepts `"bottom"`, `"top"`, or `"center"`. `font_color` and `bg_color` accept named colors (`"white"`, `"yellow"`, `"black"`, etc.) or `#RRGGBB` hex strings. RTL text (Arabic, Persian, Hebrew) is handled automatically.
+
+#### burn_subtitles
+
+```python
+burn_subtitles(
+    video_path: str,
+    output_path: str,
+    srt_path: str,
+    style: SubtitleStyle | None = None,
+    audio_path: str | None = None,
+) -> str | None
+```
+
+Burns `srt_path` into `video_path` and writes the result to `output_path`. When `audio_path` is provided, replaces the original audio track in the same encoding pass. Returns `None` if ffmpeg is unavailable.
+
+#### download_google_font
+
+```python
+download_google_font(font_name: str, cache_dir: str | None = None) -> str
+```
+
+Downloads a Google Font by name and returns the path to a local TTF/OTF file. Fonts are cached under `/tmp/mazinger-fonts/` by default. Pass the returned path to `SubtitleStyle(font_file=...)`.
+
+```python
+from mazinger.subtitle import SubtitleStyle, burn_subtitles, download_google_font
+
+style = SubtitleStyle(
+    font="DejaVu Sans",
+    font_size=28,
+    font_color="yellow",
+    position="bottom",
+    bold=True,
+)
+
+# Burn subtitles (keep original audio)
+burn_subtitles("video.mp4", "output.mp4", "translated.srt", style)
+
+# Burn subtitles and replace audio
+burn_subtitles("video.mp4", "output.mp4", "translated.srt", style, audio_path="dubbed.wav")
+
+# Use a Google Font (e.g. for Arabic)
+font_path = download_google_font("Noto Sans Arabic")
+style = SubtitleStyle(font_file=font_path, font_size=24)
+burn_subtitles("video.mp4", "output.mp4", "translated.srt", style)
+```
+
+<Note>
+  When RTL content is detected and no custom font is set, `burn_subtitles` automatically downloads Noto Sans Arabic. No extra configuration is needed for Arabic or Persian subtitles.
+</Note>
+
+</Accordion>
+
+<Accordion title="mazinger.profiles" icon="user-circle">
+
+Fetches, generates, and manages voice-cloning profiles from HuggingFace or local directories.
+
+```python
+from mazinger.profiles import fetch_profile, list_themes, generate_profile
+```
+
+#### fetch_profile
+
+```python
+fetch_profile(
+    profile_name: str,
+    cache_dir: str | None = None,
+) -> tuple[str, str]
+```
+
+Returns `(voice_sample_path, voice_script_path)` for `profile_name`. Accepts either a **local directory path** (containing `voice.wav` and `script.txt`) or a **remote profile name** from the HuggingFace dataset (e.g. `"abubakr"`). Remote files are downloaded once and cached in the system temp directory. Non-WAV files are converted to 16 kHz mono WAV automatically.
+
+```python
+from mazinger.profiles import fetch_profile
+
+# From HuggingFace
+voice_path, script_path = fetch_profile("abubakr")
+# voice_path  → /tmp/mazinger-dubber-profiles/abubakr/voice.wav
+# script_path → /tmp/mazinger-dubber-profiles/abubakr/script.txt
+
+# From a local directory
+voice_path, script_path = fetch_profile("./my-profile")
+```
+
+#### list_themes
+
+```python
+list_themes() -> list[dict]
+```
+
+Returns a list of all 16 pre-defined voice themes. Each dict has `name`, `gender`, and `languages` keys.
+
+```python
+from mazinger.profiles import list_themes
+
+themes = list_themes()
+for t in themes:
+    print(f"{t['name']:20s} {t['gender']:8s} {', '.join(t['languages'])}")
+```
+
+Available theme names: `narrator-m`, `narrator-f`, `young-m`, `young-f`, `deep-m`, `deep-f`, `warm-m`, `warm-f`, `news-m`, `news-f`, `storyteller-m`, `storyteller-f`, `kid-m`, `kid-f`, `teen-m`, `teen-f`.
+
+#### generate_profile
+
+```python
+generate_profile(
+    theme_name: str,
+    language: str,
+    output_dir: str,
+    *,
+    device: str = "cuda:0",
+    dtype: str = "bfloat16",
+) -> tuple[str, str]
+```
+
+Generates a reusable profile directory from a voice theme. Writes `voice.wav` and `script.txt` into `output_dir`. Returns `(voice_wav_path, script_txt_path)`. The directory can later be passed to `fetch_profile()` or `--clone-profile`.
+
+```python
+from mazinger.profiles import generate_profile
+
+voice_path, script_path = generate_profile(
+    "narrator-m", "Spanish", "./my-profile",
+    device="cuda:0", dtype="bfloat16",
+)
+# Creates: ./my-profile/voice.wav and ./my-profile/script.txt
+```
+
+</Accordion>
+
+<Accordion title="mazinger.srt" icon="file-code">
+
+Low-level SRT parsing and formatting utilities.
+
+```python
+from mazinger.srt import parse_file, parse_blocks, blocks_to_text
+```
+
+#### parse_file
+
+```python
+parse_file(path: str) -> list[dict]
+```
+
+Reads an SRT file and returns a list of entry dicts. Each dict has `idx` (str), `start` (float, seconds), `end` (float, seconds), and `text` (str) keys.
+
+```python
+from mazinger.srt import parse_file
+
+entries = parse_file("subtitles.srt")
+# [{"idx": "1", "start": 5.0, "end": 10.5, "text": "Hello world"}, ...]
+```
+
+#### parse_blocks (parse_string)
+
+```python
+parse_blocks(srt: str) -> list[tuple[str, float, float, str]]
+```
+
+Parses an SRT string and returns `(index, start_sec, end_sec, text)` tuples. This is the lower-level building block used internally by the translation and resegmentation stages.
+
+```python
+from mazinger.srt import parse_blocks
+
+blocks = parse_blocks(srt_content)
+# [("1", 5.0, 10.5, "Hello world"), ...]
+```
+
+#### format_srt (blocks_to_text)
+
+```python
+blocks_to_text(blocks: list[tuple[str, float, float, str]]) -> str
+```
+
+Reconstructs an SRT string from `(index, start, end, text)` tuples.
+
+```python
+from mazinger.srt import parse_blocks, blocks_to_text
+
+blocks = parse_blocks(srt_text)
+# ... modify blocks ...
+output = blocks_to_text(blocks)
+```
+
+</Accordion>
+
+</AccordionGroup>

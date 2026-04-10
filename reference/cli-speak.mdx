@@ -1,0 +1,140 @@
+---
+title: "mazinger speak — Voice-Cloned TTS Dubbed Audio Synthesis"
+description: "Synthesize a full dubbed audio track from a translated SRT file using Qwen3-TTS, Chatterbox, or MLX voice-cloning engines with tempo control."
+---
+
+The `speak` command reads a translated SRT file and synthesizes each subtitle entry as a voice-cloned audio segment using the chosen TTS engine. Segments are assembled into a single WAV file whose timeline matches the original audio duration. Tempo controls let you stretch or compress segments to fit within their original time slots.
+
+You can supply a translated SRT directly with `--srt`, or pass a source URL/video and let Mazinger auto-transcribe and auto-translate before synthesis.
+
+## Usage
+
+```bash
+mazinger speak [source] [options]
+```
+
+## Global Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base-dir` | `./mazinger_output` | Root directory for project output |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+## Input Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--srt` | — | Path to a translated SRT file (overrides auto-translate from source) |
+| `--original-audio` | — | Path to the original audio file, used for duration matching |
+| `-o`, `--output` | project dubbed WAV | Output WAV file path |
+| `--segments-dir` | — | Directory to store individual per-segment WAV files |
+| `--slug` | auto-generated | Project slug |
+| `--quality` | best available | Video download quality when using a URL source |
+| `--cookies-from-browser` | — | Browser name for yt-dlp cookie extraction |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+
+## Voice Flags
+
+Exactly one voice source is required: a clone profile, a voice theme, or a voice sample with its transcript.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--clone-profile` | — | HuggingFace profile name or local directory path containing `voice.wav` + `script.txt` |
+| `--voice-theme` | — | Pre-defined voice theme (e.g. `narrator-m`, `warm-f`). Run `mazinger profile list` to see all 16 themes |
+| `--voice-sample` | — | Path to a reference voice audio file |
+| `--voice-script` | — | Path to the transcript of the voice sample, or inline text |
+
+## TTS Engine Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--tts-engine` | `qwen` | Engine: `qwen` (Qwen3-TTS), `chatterbox` (ResembleAI), or `mlx` (Apple Silicon) |
+| `--tts-model` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | Qwen TTS model ID |
+| `--mlx-tts-model` | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16` | MLX Qwen3-TTS model name |
+| `--chatterbox-model` | `ResembleAI/chatterbox` | Chatterbox model ID |
+| `--tts-language` | same as `--target-language` | Language hint passed to the TTS engine |
+| `--chatterbox-exaggeration` | `0.5` | Emotion intensity for Chatterbox (0.0–1.0) |
+| `--chatterbox-cfg` | `0.5` | Pacing / CFG weight for Chatterbox (0.0–1.0) |
+| `--device` | `auto` | Compute device: `auto`, `cuda`, or `cpu` |
+| `--dtype` | `bfloat16` | Weight dtype for Qwen: `bfloat16`, `float16`, or `float32` |
+
+## Tempo Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--dynamic-tempo` | off | Enable per-segment tempo matching — each segment is sped up or slowed down to fit its time slot |
+| `--fixed-tempo` | — | Apply a constant speed multiplier to all segments (e.g. `1.1`). Overrides `--dynamic-tempo` |
+| `--max-tempo` | `1.5` | Maximum speed-up factor when using dynamic or auto tempo |
+
+## Translation Flags
+
+Used when auto-translating from a source URL or video.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--source-language` | `auto` | Source language or `auto` to detect |
+| `--target-language` | `English` | Target language for translation |
+| `--words-per-second` | `2.0` | Target speech rate for duration-aware word budgets |
+| `--duration-budget` | `0.80` | Fraction of each subtitle's time window to fill with speech |
+| `--translate-technical-terms` | off | Translate technical terms (default: preserve them) |
+
+## LLM / API Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--llm-model` | `gpt-4.1` | LLM model for translation |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+
+## Other Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--force-reset` | off | Delete existing TTS segment files and re-synthesize all segments from scratch |
+
+## Examples
+
+```bash
+# Synthesize with a pre-defined voice theme
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --voice-theme warm-f -o dubbed.wav
+
+# Synthesize using a HuggingFace clone profile
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --clone-profile abubakr -o dubbed.wav
+
+# Chatterbox engine with raised emotion and tighter pacing
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --voice-sample speaker.m4a \
+    --tts-engine chatterbox \
+    --chatterbox-exaggeration 0.7 \
+    --chatterbox-cfg 0.3 \
+    -o dubbed.wav
+
+# Qwen3-TTS on Apple Silicon with MLX
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --clone-profile abubakr \
+    --tts-engine mlx \
+    -o dubbed.wav
+
+# Fixed-tempo speed-up across all segments
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --clone-profile abubakr \
+    --fixed-tempo 1.1 \
+    -o dubbed.wav
+
+# Dynamic tempo with a hard cap
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --clone-profile abubakr \
+    --dynamic-tempo --max-tempo 1.3 \
+    -o dubbed.wav
+```
+
+<Note>
+Individual segment WAV files are cached in `--segments-dir`. Subsequent runs skip already-synthesized segments unless `--force-reset` is passed.
+</Note>
+
+<Tip>
+For expressive narration with Chatterbox, try `--chatterbox-exaggeration 0.6 --chatterbox-cfg 0.4`. Lower CFG values produce more natural pacing; higher exaggeration values produce more animated delivery.
+</Tip>

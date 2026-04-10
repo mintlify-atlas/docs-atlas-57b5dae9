@@ -1,0 +1,231 @@
+---
+title: "Mazinger Output Directory Structure"
+description: "Understand how Mazinger organizes output files by project slug, what each file contains, and how to customize the root directory and slug."
+---
+
+Mazinger uses a project-based directory layout: every video gets its own folder under a shared root, named by a **slug** derived from the video title. Shared assets (the source video, transcription, thumbnails) live at the project root, while language-specific outputs (translations, TTS segments, dubbed video) are nested under `lang/<language>/`. This layout lets you dub the same source into multiple languages without duplicating source files.
+
+## Directory layout
+
+```text
+mazinger_output/
+└── projects/
+    └── <slug>/
+        ├── source/
+        │   ├── video.mp4
+        │   ├── audio.mp3
+        │   └── video_meta.json
+        ├── transcription/
+        │   ├── source.raw.srt
+        │   ├── source.srt
+        │   └── source.reviewed.srt
+        ├── thumbnails/
+        │   └── meta.json
+        ├── analysis/
+        │   └── description.json
+        └── lang/
+            └── <language>/
+                ├── transcription/
+                │   └── translated.raw.srt
+                ├── subtitles/
+                │   └── translated.srt
+                ├── tts/
+                │   ├── segments/
+                │   │   ├── seg_0001.wav
+                │   │   ├── seg_0002.wav
+                │   │   └── ...
+                │   ├── dubbed.wav
+                │   └── dubbed.mp4
+                └── voice_profile/
+                    ├── voice.wav
+                    └── script.txt
+```
+
+The default root is `./mazinger_output`. Change it with `--base-dir` or the `base_dir` constructor parameter.
+
+## File descriptions
+
+### `source/`
+
+Files produced by the **download** stage.
+
+| File | Description |
+|------|-------------|
+| `video.mp4` | Original video, either downloaded from a URL or copied from a local file |
+| `audio.mp3` | Audio track extracted from the video by ffmpeg |
+| `video_meta.json` | Curated metadata from yt-dlp: title, description, uploader, duration, language |
+
+### `transcription/`
+
+Files produced by the **transcribe** stage.
+
+| File | Description |
+|------|-------------|
+| `source.raw.srt` | Direct output from the speech recognition engine, before any cleanup |
+| `source.srt` | Cleaned and resegmented transcription — the version used downstream |
+| `source.reviewed.srt` | ASR-reviewed transcript, produced only when `--asr-review` is enabled |
+
+### `thumbnails/`
+
+Files produced by the **thumbnails** stage.
+
+| File | Description |
+|------|-------------|
+| `meta.json` | Array of selected keyframes with `timestamp`, `seconds`, `reason`, and `path` |
+
+Example `meta.json`:
+
+```json
+[
+    {
+        "timestamp": "02:00",
+        "seconds": 120.5,
+        "reason": "Speaker opens the configuration dashboard",
+        "path": "/absolute/path/to/thumb_034_120.5s.jpg"
+    }
+]
+```
+
+### `analysis/`
+
+Files produced by the **describe** stage.
+
+| File | Description |
+|------|-------------|
+| `description.json` | LLM-generated structured analysis: title, summary, keypoints, keywords |
+
+Example `description.json`:
+
+```json
+{
+    "title": "Building REST APIs with FastAPI",
+    "summary": "A walkthrough of creating REST endpoints using FastAPI...",
+    "keypoints": [
+        "FastAPI uses type hints for validation",
+        "Automatic OpenAPI documentation generation"
+    ],
+    "keywords": ["FastAPI", "REST", "Pydantic", "OpenAPI"]
+}
+```
+
+### `lang/<language>/transcription/`
+
+Files produced by the **translate** stage.
+
+| File | Description |
+|------|-------------|
+| `translated.raw.srt` | Translation output before resegmentation |
+
+### `lang/<language>/subtitles/`
+
+Files produced by the **resegment** stage.
+
+| File | Description |
+|------|-------------|
+| `translated.srt` | Final subtitles — translated, merged, and split for readability. This is `ProjectPaths.final_srt`. |
+
+### `lang/<language>/tts/`
+
+Files produced by the **speak** and **assemble** stages.
+
+| File | Description |
+|------|-------------|
+| `segments/seg_NNNN.wav` | One WAV file per subtitle entry, synthesised by the TTS engine |
+| `dubbed.wav` | All segments assembled onto a timeline matching the original video duration |
+| `dubbed.mp4` | Final video with the dubbed audio track, optionally with burned subtitles |
+
+<Tip>
+TTS segments are cached individually. If a run is interrupted you can resume from the last completed segment without regenerating the whole audio track.
+</Tip>
+
+### `lang/<language>/voice_profile/`
+
+Created only when using `--voice-theme`. The generated profile is saved here and reused on subsequent runs of the same project.
+
+| File | Description |
+|------|-------------|
+| `voice.wav` | Generated voice reference audio from the selected theme |
+| `script.txt` | Transcript matching the generated voice audio |
+
+## Slug generation
+
+The project folder name (slug) is derived from the video title when downloading from a URL:
+
+1. The title is lowercased.
+2. Special characters are removed.
+3. Spaces become hyphens.
+4. Consecutive hyphens are collapsed.
+
+For example, `"Building REST APIs with FastAPI (2024)"` becomes `building-rest-apis-with-fastapi-2024`.
+
+When ingesting a local file, the slug is derived from the filename stem using the same rules.
+
+Override the auto-generated slug with `--slug` to use a fixed name:
+
+```bash
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --slug my-video \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+## Changing the root directory
+
+Use `--base-dir` on the CLI or the `base_dir` parameter in the Python API to store all output in a different location:
+
+<CodeGroup>
+
+```bash CLI
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --base-dir /data/dubs \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+```python Python API
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_sample="speaker.m4a",
+    voice_script="transcript.txt",
+    target_language="Arabic",
+    base_dir="/data/dubs",
+)
+```
+
+</CodeGroup>
+
+## Using `ProjectPaths` in Python
+
+The `ProjectPaths` class provides typed access to every path in the project layout. Pass a `target_language` to resolve language-scoped paths:
+
+```python
+from mazinger import ProjectPaths
+
+proj = ProjectPaths("my-video", base_dir="./output", target_language="Arabic")
+proj.ensure_dirs()  # create all subdirectories
+
+# Shared paths
+print(proj.root)               # ./output/projects/my-video/
+print(proj.video)              # ./output/projects/my-video/source/video.mp4
+print(proj.audio)              # ./output/projects/my-video/source/audio.mp3
+print(proj.source_srt)         # ./output/projects/my-video/transcription/source.srt
+print(proj.source_raw_srt)     # ./output/projects/my-video/transcription/source.raw.srt
+print(proj.thumbs_meta)        # ./output/projects/my-video/thumbnails/meta.json
+print(proj.description)        # ./output/projects/my-video/analysis/description.json
+
+# Language-scoped paths (require target_language)
+print(proj.translated_raw_srt) # ./output/projects/my-video/lang/Arabic/transcription/translated.raw.srt
+print(proj.final_srt)          # ./output/projects/my-video/lang/Arabic/subtitles/translated.srt
+print(proj.final_audio)        # ./output/projects/my-video/lang/Arabic/tts/dubbed.wav
+print(proj.final_video)        # ./output/projects/my-video/lang/Arabic/tts/dubbed.mp4
+print(proj.tts_segments_dir)   # ./output/projects/my-video/lang/Arabic/tts/segments/
+
+# Human-readable overview of which files exist
+print(proj.summary())
+```
+
+`ensure_dirs()` is idempotent — it is safe to call at the start of any pipeline stage.

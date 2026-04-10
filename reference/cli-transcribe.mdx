@@ -1,0 +1,94 @@
+---
+title: "mazinger transcribe — Convert Speech to SRT Subtitles"
+description: "Convert audio or video to time-coded SRT subtitles using cloud or local Whisper backends, with optional LLM-powered transcript refinement."
+---
+
+The `transcribe` command converts an audio file into an SRT subtitle file. It supports four backends — OpenAI Whisper (cloud), faster-whisper, whisperx, and mlx-whisper (Apple Silicon) — and includes optional post-processing steps that use an LLM to fix transcription errors and normalize technical terminology.
+
+You can pass a `source` URL or local video path for automatic download and audio extraction, or point directly at an existing audio file with `--audio`.
+
+## Usage
+
+```bash
+mazinger transcribe [source] [options]
+```
+
+If `source` is provided, the video is downloaded and its audio is extracted first. Use `--audio` to skip download and transcribe an existing audio file directly.
+
+## Global Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--base-dir` | `./mazinger_output` | Root directory for project output |
+| `--verbose` / `-v` | off | Enable debug-level logging |
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--audio` | — | Path to an existing audio file (overrides source download) |
+| `-o`, `--output` | project SRT path | Output SRT file path |
+| `--method` | `faster-whisper` | Transcription backend: `openai`, `faster-whisper`, `whisperx`, or `mlx-whisper` |
+| `--model` | varies | Model name — `whisper-1` for OpenAI; `large-v3` for local backends |
+| `--mlx-whisper-model` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model name (Apple Silicon) |
+| `--device` | `auto` | Compute device: `auto`, `cuda`, or `cpu` |
+| `--batch-size` | `16` | Batch size for local transcription methods |
+| `--compute-type` | `float16` | Weight precision: `float16`, `int8`, or `int8_float16` |
+| `--beam-size` | `5` | Beam size for decoding |
+| `--language` | auto-detect | Force a language code (e.g. `en`, `ar`, `fr`) |
+| `--initial-prompt` | — | Seed text to condition Whisper (e.g. domain-specific terms, video title) |
+| `--no-condition-on-previous-text` | off | Disable conditioning on previous segment text |
+| `--max-chars` | `84` | Maximum characters per subtitle entry |
+| `--max-duration` | `5.0` | Maximum duration in seconds per subtitle entry |
+| `--no-resegment` | off | Skip the post-transcription resegmentation step |
+| `--refine` | off | Use an LLM to add punctuation and fix misheard words |
+| `--asr-review` | off | Review the transcript with an LLM: fix typos, punctuation, and optionally normalise technical terms |
+| `--keep-technical-english` | off | Convert technical terms to English in the transcript (requires `--asr-review`) |
+| `--llm-model` | `gpt-4.1` | LLM model used for refinement |
+| `--llm-think` / `--no-llm-think` | — | Enable or disable LLM thinking mode |
+| `--openai-api-key` | `$OPENAI_API_KEY` | OpenAI API key |
+| `--openai-base-url` | `$OPENAI_BASE_URL` | Custom OpenAI-compatible API base URL |
+| `--slug` | auto-generated | Project slug (used when resolving output path from source) |
+| `--quality` | best available | Video download quality when using a URL source |
+| `--cookies-from-browser` | — | Browser name for yt-dlp cookie extraction |
+| `--cookies` | — | Path to a Netscape `cookies.txt` file |
+
+## Examples
+
+```bash
+# Cloud transcription with OpenAI Whisper
+mazinger transcribe --audio recording.mp3 -o subs.srt
+
+# Local transcription with faster-whisper on GPU
+mazinger transcribe --audio recording.mp3 -o subs.srt \
+    --method faster-whisper --device cuda
+
+# Force Arabic language, smaller model
+mazinger transcribe --audio lecture.mp3 -o arabic.srt \
+    --method faster-whisper \
+    --model medium \
+    --language ar
+
+# Auto-download from URL, then transcribe
+mazinger transcribe "https://youtube.com/watch?v=abc123" \
+    --base-dir ./output
+
+# Transcribe and apply LLM review to clean up the transcript
+mazinger transcribe --audio podcast.mp3 -o podcast.srt \
+    --method faster-whisper \
+    --asr-review \
+    --keep-technical-english
+
+# Apple Silicon with MLX Whisper
+mazinger transcribe --audio recording.mp3 -o subs.srt \
+    --method mlx-whisper \
+    --mlx-whisper-model mlx-community/whisper-large-v3-turbo
+```
+
+<Note>
+After transcription, Mazinger automatically resegments the raw Whisper output into tidy subtitle blocks respecting `--max-chars` and `--max-duration`. Pass `--no-resegment` to receive the raw Whisper output without this step.
+</Note>
+
+<Tip>
+Use `--initial-prompt` to improve accuracy for domain-specific content. For example: `--initial-prompt "This is a lecture about transformer neural network architectures."` primes Whisper with the correct vocabulary before it processes the first segment.
+</Tip>

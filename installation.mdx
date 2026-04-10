@@ -1,0 +1,196 @@
+---
+title: "Install Mazinger Dubber and optional extras"
+description: "Install Mazinger via pip. The base package covers cloud workflows with no GPU. Add extras for local transcription or TTS with Qwen, Chatterbox, or MLX."
+---
+
+The base `mazinger` package covers video download, cloud transcription via the OpenAI Whisper API, thumbnail extraction, content description, subtitle translation, re-segmentation, and subtitle embedding — no GPU required. Local transcription and voice synthesis are available as optional extras you can add to match your hardware and workflow.
+
+## Base install
+
+```bash
+pip install mazinger
+```
+
+Core dependencies installed: `yt-dlp`, `openai`, `json-repair`, `Pillow`, `soundfile`, `numpy`, `tqdm`.
+
+## Optional extras
+
+<CodeGroup>
+
+```bash Transcription
+# faster-whisper — CTranslate2-based, ~4× faster than Whisper, compatible with all TTS engines
+pip install "mazinger[transcribe-faster]"
+
+# WhisperX — best word-level alignment via wav2vec2 (NOT compatible with Chatterbox)
+pip install "mazinger[transcribe-whisperx]"
+
+# MLX Whisper — Apple Silicon only
+pip install "mazinger[transcribe-mlx]"
+```
+
+```bash TTS
+# Qwen3-TTS — multilingual, requires voice sample + transcript
+pip install "mazinger[tts]"
+
+# Chatterbox — emotion control, requires only a voice sample (no transcript)
+pip install "mazinger[tts-chatterbox]"
+
+# MLX Qwen3-TTS — Apple Silicon only
+pip install "mazinger[tts-mlx]"
+```
+
+```bash Full bundles
+# faster-whisper + Qwen3-TTS
+pip install "mazinger[all-qwen]"
+
+# faster-whisper + Chatterbox
+pip install "mazinger[all-chatterbox]"
+
+# MLX Whisper + MLX Qwen3-TTS — Apple Silicon only
+pip install "mazinger[all-mlx]"
+```
+
+</CodeGroup>
+
+<Note>
+  `faster-whisper` is the recommended default for local transcription. It is lightweight, easy to install, and compatible with all TTS engines. WhisperX is available for users who need word-level alignment but conflicts with Chatterbox — use `transcribe-faster` or cloud transcription in Chatterbox environments.
+</Note>
+
+## Compatibility matrix
+
+Qwen, Chatterbox, and MLX pull different versions of `transformers` and cannot coexist in one environment. Pick one TTS engine per virtual environment.
+
+| Extra | `transformers` version | Compatible transcription |
+|-------|----------------------|--------------------------|
+| `tts` (Qwen3-TTS) | ≥ 4.48 | `transcribe-faster`, `transcribe-whisperx` |
+| `tts-chatterbox` | == 4.46.3 | `transcribe-faster`, OpenAI cloud transcription |
+| `tts-mlx` | mlx-audio (no conflict) | `transcribe-mlx` |
+| `all-mlx` | mlx-audio + mlx-whisper | Apple Silicon only |
+
+WhisperX requires `transformers>=4.48`, which conflicts with Chatterbox's pinned `transformers==4.46.3`. When using Chatterbox, choose `transcribe-faster` or the cloud-based OpenAI transcription instead.
+
+## What each task requires
+
+| Task | Extra needed | Hardware |
+|------|-------------|----------|
+| Download, translate, subtitle embed | — (base install) | Any |
+| Transcribe (cloud) | — (OpenAI API key) | Any |
+| Transcribe (local, faster-whisper) | `transcribe-faster` | CUDA GPU |
+| Transcribe (WhisperX) | `transcribe-whisperx` | CUDA GPU |
+| Transcribe (MLX Whisper) | `transcribe-mlx` | Apple Silicon |
+| Speak (Qwen3-TTS) | `tts` | CUDA GPU |
+| Speak (Chatterbox) | `tts-chatterbox` | CUDA GPU |
+| Speak (MLX TTS) | `tts-mlx` | Apple Silicon |
+| Full dub (Qwen) | `all-qwen` | CUDA GPU |
+| Full dub (Chatterbox) | `all-chatterbox` | CUDA GPU |
+| Full dub (MLX) | `all-mlx` | Apple Silicon |
+
+## System prerequisites
+
+| Tool | Used by | How to install |
+|------|---------|---------------|
+| ffmpeg | download, thumbnails, assemble, subtitle | `apt install ffmpeg` / `brew install ffmpeg` |
+| ffprobe | assemble (duration detection) | Bundled with ffmpeg |
+| CUDA GPU + drivers | local transcription, TTS | NVIDIA driver + CUDA toolkit |
+
+Set your OpenAI API key before running any pipeline stage that calls the OpenAI API:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+## Virtual environment setup
+
+Qwen, Chatterbox, and MLX need separate virtual environments to avoid dependency conflicts. Below are tested recipes for each.
+
+<CodeGroup>
+
+```bash Chatterbox (Python 3.12 + CUDA)
+uv venv .venv --python 3.12
+source .venv/bin/activate
+
+# numpy must exist before the pkuseg C extension compiles
+uv pip install "numpy>=1.26"
+
+# Install CUDA-enabled PyTorch — adjust cu128 to match your driver
+uv pip install torch torchaudio \
+    --index-url https://download.pytorch.org/whl/cu128
+
+uv pip install --no-build-isolation "mazinger[all-chatterbox]"
+```
+
+```bash Qwen (Python 3.12 + CUDA)
+uv venv .venv --python 3.12
+source .venv/bin/activate
+
+uv pip install torch torchaudio \
+    --index-url https://download.pytorch.org/whl/cu128
+
+cat > /tmp/qwen_overrides.txt << 'EOF'
+torch>=2.0
+torchaudio>=2.0
+EOF
+
+uv pip install --override /tmp/qwen_overrides.txt "mazinger[all-qwen]"
+```
+
+```bash MLX (Apple Silicon)
+python -m venv .venv
+source .venv/bin/activate
+
+pip install "mazinger[all-mlx]"
+```
+
+```bash Standard venv (pip)
+python -m venv .venv
+source .venv/bin/activate
+
+pip install "mazinger[all-qwen]"
+# or: pip install "mazinger[all-chatterbox]"
+```
+
+</CodeGroup>
+
+### Google Colab
+
+The overrides below prevent `chatterbox-tts` and `qwen-tts` from downgrading PyTorch and other packages that Colab ships with pre-configured CUDA support.
+
+<CodeGroup>
+
+```bash Colab — Chatterbox
+cat > /tmp/cb_overrides.txt << 'EOF'
+torch>=2.0
+torchaudio>=2.0
+numpy>=1.26
+pandas>=2.2
+gradio>=5.0
+safetensors>=0.3
+EOF
+
+uv pip install --system --no-build-isolation \
+    --override /tmp/cb_overrides.txt \
+    "mazinger[all-chatterbox]"
+```
+
+```bash Colab — Qwen
+cat > /tmp/qwen_overrides.txt << 'EOF'
+torch>=2.0
+torchaudio>=2.0
+EOF
+
+uv pip install --system \
+    --override /tmp/qwen_overrides.txt \
+    "mazinger[all-qwen]"
+```
+
+</CodeGroup>
+
+## Flash attention (optional)
+
+Speeds up TTS inference on supported GPUs. Chatterbox falls back to standard attention automatically if this is not installed.
+
+```bash
+uv pip install --no-build-isolation flash-attn
+# or as an extra:
+pip install "mazinger[flash-attn]"
+```

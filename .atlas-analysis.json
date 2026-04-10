@@ -1,0 +1,104 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Mazinger Dubber",
+  "projectDescription": "An end-to-end video dubbing pipeline that downloads, transcribes, translates, voice-clones, and produces fully dubbed audio or video in a single command.",
+  "theme": "palm",
+  "primaryColor": "#242b2c",
+  "lightColor": "#6a6a6d",
+  "darkColor": "#ebeaea",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Pipeline",
+            "pages": [
+              "pipeline/overview",
+              "pipeline/voice-cloning",
+              "pipeline/subtitle-styling",
+              "pipeline/configuration"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/youtube-cookies",
+              "guides/project-structure"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI Commands",
+            "pages": [
+              "reference/cli-dub",
+              "reference/cli-transcribe",
+              "reference/cli-translate",
+              "reference/cli-speak",
+              "reference/cli-subtitle",
+              "reference/cli-utils"
+            ]
+          },
+          {
+            "group": "Python API",
+            "pages": [
+              "reference/python-dubber",
+              "reference/python-stages",
+              "reference/python-utilities"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "10-stage dubbing pipeline (download, transcribe, thumbnail, describe, review, translate, re-segment, TTS, assemble, subtitle)",
+    "Auto-clone speaker voice from source audio with no configuration needed",
+    "16 pre-defined voice themes (narrator, warm, deep, news, storyteller, kid, teen — male/female)",
+    "Three TTS engines: Qwen3-TTS (CUDA), Chatterbox (CUDA), and MLX (Apple Silicon)",
+    "Multiple transcription backends: OpenAI Whisper API, faster-whisper, WhisperX, and MLX Whisper",
+    "Duration-aware translation with word budgets to keep dubbed speech in sync",
+    "Automatic resume — completed stages and individual TTS segments are cached and skipped",
+    "Burn styled subtitles with Google Fonts, RTL support, and custom colors",
+    "Support for custom OpenAI-compatible LLM providers including local Ollama models",
+    "Single CLI command for the full pipeline or run individual stages independently"
+  ],
+  "publicApiSurface": [
+    "MazingerDubber (class) — main pipeline orchestrator",
+    "MazingerDubber.dub() — run full pipeline",
+    "ProjectPaths (class) — manage project output paths",
+    "LLMUsageTracker (class) — track LLM token usage",
+    "mazinger dub — CLI: full dubbing pipeline",
+    "mazinger transcribe — CLI: speech-to-SRT",
+    "mazinger translate — CLI: translate SRT subtitles",
+    "mazinger speak — CLI: TTS synthesis from SRT",
+    "mazinger subtitle — CLI: burn subtitles into video",
+    "mazinger download — CLI: download and extract audio",
+    "mazinger slice — CLI: extract time range from video",
+    "mazinger describe — CLI: LLM content analysis",
+    "mazinger resegment — CLI: re-segment subtitle timing",
+    "mazinger thumbnails — CLI: extract key frames",
+    "mazinger profile list / profile generate — CLI: manage voice profiles",
+    "mazinger.download.download_video()",
+    "mazinger.download.extract_audio()",
+    "mazinger.transcribe.transcribe()",
+    "mazinger.translate.translate_srt()",
+    "mazinger.tts.load_model() / synthesize_segments() / unload_model()",
+    "mazinger.assemble.assemble_timeline() / mux_video() / post_process()",
+    "mazinger.subtitle.SubtitleStyle / burn_subtitles()",
+    "mazinger.profiles.fetch_profile() / list_themes() / generate_profile()",
+    "mazinger.srt.parse_file() / parse_string() / format_srt()"
+  ]
+}

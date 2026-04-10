@@ -1,0 +1,306 @@
+---
+title: "Voice Cloning in Mazinger Dubber"
+description: "Four ways to provide a voice for dubbing: auto-clone from source audio, 16 built-in themes, ready-made HuggingFace profiles, or your own recorded voice sample."
+---
+
+Mazinger can clone any voice to produce dubbed audio. When no voice option is provided, the pipeline automatically extracts a segment from the source audio and clones it — no configuration required. For more control, you can select a pre-defined voice theme, use a ready-made profile downloaded from HuggingFace, or supply your own voice recording. All four approaches work with the full `dub` pipeline and the standalone `mazinger speak` sub-command.
+
+## Auto-clone
+
+When you omit all voice flags, Mazinger automatically selects the 20–60 second segment with the highest word density from the source audio and uses it — along with the corresponding transcript — as the voice cloning reference. The profile is saved to the project's `voice_profile/` directory and reused on subsequent runs of the same project.
+
+**Requirements:** the source audio must be at least 20 seconds long and the selected segment must contain at least 20 words.
+
+<CodeGroup>
+
+```bash CLI
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --target-language Spanish
+```
+
+```python Python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...", base_dir="./output")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    target_language="Spanish",
+)
+```
+
+</CodeGroup>
+
+<Tip>
+  If the source audio is too short or too sparse (fewer than 20 words in any 20–60 s window), provide a voice explicitly using one of the options below.
+</Tip>
+
+## Voice themes
+
+Pre-defined voice themes are the simplest way to get started without recording. Pass `--voice-theme <name>` to select from 16 built-in styles — no audio files or downloads required. Mazinger first checks HuggingFace for a pre-generated version; if none is found, it synthesizes the reference voice locally using Qwen3-TTS VoiceDesign.
+
+The generated profile is saved to the project's `voice_profile/` directory and reused on subsequent runs.
+
+### Available themes
+
+| Theme | Gender | Style |
+|-------|--------|-------|
+| `narrator-m` | Male | Professional narrator |
+| `narrator-f` | Female | Professional narrator |
+| `young-m` | Male | Youthful, dynamic |
+| `young-f` | Female | Youthful, dynamic |
+| `deep-m` | Male | Deep, resonant |
+| `deep-f` | Female | Deep, resonant |
+| `warm-m` | Male | Warm, friendly |
+| `warm-f` | Female | Warm, friendly |
+| `news-m` | Male | News reader |
+| `news-f` | Female | News reader |
+| `storyteller-m` | Male | Engaged storytelling |
+| `storyteller-f` | Female | Engaged storytelling |
+| `kid-m` | Male | Child (~8 years old) |
+| `kid-f` | Female | Child (~8 years old) |
+| `teen-m` | Male | Teenager (~16 years old) |
+| `teen-f` | Female | Teenager (~16 years old) |
+
+All themes support 10 languages: Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, and Italian.
+
+<CodeGroup>
+
+```bash CLI
+# Dub with a voice theme
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --voice-theme narrator-m \
+    --target-language Spanish
+
+# Speak sub-command with a theme
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --voice-theme warm-f -o dubbed.wav
+```
+
+```python Python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...", base_dir="./output")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_theme="narrator-m",
+    target_language="Spanish",
+)
+```
+
+</CodeGroup>
+
+### Listing and pre-generating themes
+
+```bash
+# List all available themes
+mazinger profile list
+
+# Pre-generate a profile from a theme and save it for reuse
+mazinger profile generate narrator-f English -o ./my-narrator
+
+# Use the saved profile with --clone-profile
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile ./my-narrator \
+    --target-language English
+```
+
+In Python:
+
+```python
+from mazinger.profiles import list_themes, generate_profile
+
+# List all themes
+for theme in list_themes():
+    print(f"{theme['name']:20s} {theme['gender']:8s} langs={', '.join(theme['languages'])}")
+
+# Generate and save a profile
+voice_path, script_path = generate_profile(
+    "narrator-m", "Spanish", "./my-profile",
+    device="cuda:0", dtype="bfloat16",
+)
+# Writes voice.wav and script.txt into ./my-profile/
+```
+
+## Built-in profiles
+
+Ready-made profiles are hosted on HuggingFace at `bakrianoo/mazinger-dubber-profiles` and downloaded automatically on first use. Files are cached in `/tmp/mazinger-dubber-profiles/` and reused on subsequent calls. Non-WAV voice files are automatically converted to 16 kHz mono WAV.
+
+### Available profiles
+
+| Profile | Language | Description |
+|---------|----------|-------------|
+| `abubakr` | English | Abu Bakr Soliman — male voice |
+| `daheeh-v1` | English | Ahmed El Ghandour (The Daheeh) — male Arabic-accented English voice |
+| `3b1b` | English | 3Blue1Brown (Grant Sanderson) — male voice, math/science narration style |
+| `italian-v1` | Italian | Italian male narrator voice |
+| `morgan-freeman` | English | Morgan Freeman — male narration voice |
+| `trump-v1` | English | Donald Trump — male political speech style |
+
+<CodeGroup>
+
+```bash CLI
+# Full pipeline with a built-in profile
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr \
+    --target-language Arabic
+
+# Speak sub-command
+mazinger speak --srt translated.srt --original-audio audio.mp3 \
+    --clone-profile morgan-freeman -o dubbed.wav
+
+# Override the voice script while keeping the profile's audio
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --clone-profile abubakr --voice-script custom_transcript.txt
+```
+
+```python Python
+from mazinger.profiles import fetch_profile
+
+voice_path, script_path = fetch_profile("abubakr")
+# voice_path  → /tmp/mazinger-dubber-profiles/abubakr/voice.wav
+# script_path → /tmp/mazinger-dubber-profiles/abubakr/script.txt
+
+# Also works with local directories
+voice_path, script_path = fetch_profile("./my-profile")
+```
+
+</CodeGroup>
+
+`--clone-profile` also accepts a local directory path containing a voice sample (`voice.wav`, `voice.m4a`, or `voice.mp3`) and a `script.txt` transcript file.
+
+## Custom voice
+
+If you have your own voice recording, pass it directly — no profile upload or registration required.
+
+| File | Purpose | Required by |
+|------|---------|-------------|
+| Voice sample (`.wav`, `.m4a`, `.mp3`) | 10–30 seconds of clear speech | All engines |
+| Transcript (`script.txt`) | Exact word-for-word text of what was spoken | Qwen TTS and MLX only |
+
+<CodeGroup>
+
+```bash CLI (Qwen TTS)
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --voice-sample ./my-voice.wav \
+    --voice-script ./my-transcript.txt \
+    --target-language Spanish \
+    --base-dir ./output
+```
+
+```bash CLI (Chatterbox)
+# Chatterbox does not require a transcript
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --voice-sample ./my-voice.wav \
+    --voice-script "" \
+    --tts-engine chatterbox \
+    --target-language French \
+    --base-dir ./output
+```
+
+```python Python (Qwen TTS)
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...", base_dir="./output")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_sample="./my-voice.wav",
+    voice_script="./my-transcript.txt",   # file path or inline text
+    target_language="Spanish",
+    tts_engine="qwen",
+    output_type="video",
+)
+```
+
+```python Python (Chatterbox)
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_sample="./my-voice.wav",
+    voice_script="",                        # not used by Chatterbox
+    target_language="French",
+    tts_engine="chatterbox",
+    chatterbox_exaggeration=0.6,            # emotion intensity (0.0–1.0)
+    chatterbox_cfg=0.5,                     # pacing control (0.0–1.0)
+    output_type="audio",
+)
+```
+
+</CodeGroup>
+
+<Note>
+  Mazinger auto-detects whether `--voice-script` is a file path or inline text. If the value points to an existing file, it reads the file; otherwise it treats the string as the literal transcript.
+</Note>
+
+### Recording tips
+
+- **Environment** — record in a quiet room with minimal echo and background noise.
+- **Duration** — 10–30 seconds is ideal; longer samples don't significantly improve quality.
+- **Speaking style** — speak naturally at your normal pace and tone.
+- **Audio format** — WAV at 16 kHz mono is optimal; Mazinger auto-converts `.m4a` and `.mp3`.
+- **Transcript accuracy** — for Qwen TTS, the transcript must match the recording exactly, word for word. Mismatches degrade clone quality.
+
+## TTS engine comparison
+
+| Feature | Qwen3-TTS (default) | Chatterbox | MLX |
+|---------|---------------------|------------|-----|
+| Voice sample | Required | Required | Required |
+| Transcript of sample | **Required** | Not used | **Required** |
+| Install extra | `pip install "mazinger[tts]"` | `pip install "mazinger[tts-chatterbox]"` | `pip install "mazinger[tts-mlx]"` |
+| CLI flag | `--tts-engine qwen` | `--tts-engine chatterbox` | `--tts-engine mlx` |
+| Emotion control | — | `--chatterbox-exaggeration` (0.0–1.0) | — |
+| Pacing control | — | `--chatterbox-cfg` (0.0–1.0) | — |
+| Supported languages | Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian | English (primary), 23 total | Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian |
+| Hardware | CUDA GPU | CUDA GPU | Apple Silicon |
+
+<Warning>
+  Qwen, Chatterbox, and MLX require different dependencies and **cannot share the same Python environment**. Create separate virtual environments for each engine.
+</Warning>
+
+**When to choose which:**
+
+- **Qwen** — best for multilingual dubbing when you have an accurate transcript of the voice sample.
+- **Chatterbox** — best when you only have an audio clip with no transcript, or when you want fine-grained control over emotion and pacing.
+- **MLX** — best for Apple Silicon users who want GPU-accelerated TTS without CUDA.
+
+## Creating and sharing a HuggingFace profile
+
+Once you have tested your voice and are happy with the results, you can package it as a profile on HuggingFace so others can use `--clone-profile your-name`.
+
+Each profile is a folder containing two files:
+
+```
+profiles/your-name/
+├── voice.wav       # or voice.m4a, voice.mp3
+└── script.txt      # plain-text transcript of the voice sample
+```
+
+<Steps>
+  <Step title="Prepare the folder">
+    ```bash
+    mkdir -p profiles/my-name
+    cp my-voice.wav profiles/my-name/voice.wav
+    cp my-transcript.txt profiles/my-name/script.txt
+    ```
+  </Step>
+  <Step title="Log in to HuggingFace">
+    ```bash
+    pip install huggingface_hub
+    huggingface-cli login
+    ```
+  </Step>
+  <Step title="Upload to the shared dataset">
+    ```bash
+    huggingface-cli upload bakrianoo/mazinger-dubber-profiles \
+        ./profiles/my-name my-name \
+        --repo-type=dataset \
+        --commit-message "Add profile: my-name"
+    ```
+  </Step>
+  <Step title="Use it immediately">
+    ```bash
+    mazinger dub "https://youtube.com/watch?v=VIDEO_ID" --clone-profile my-name
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,364 @@
+---
+title: "MazingerDubber Python Class Reference"
+description: "Complete reference for the MazingerDubber pipeline class — constructor options, all dub() parameters grouped by category, and the ProjectPaths return value."
+---
+
+`MazingerDubber` is the primary entry point for Mazinger's end-to-end dubbing pipeline. Instantiate it once with your API credentials and output directory, then call `dub()` for each video you want to dub. Under the hood it orchestrates all nine stages — download, transcribe, thumbnail extraction, content description, optional ASR review, translation, re-segmentation, TTS synthesis, and final assembly — while sharing state and caching intermediate results between runs.
+
+```python
+from mazinger import MazingerDubber
+```
+
+---
+
+## Constructor
+
+```python
+MazingerDubber(
+    openai_api_key=None,
+    openai_base_url=None,
+    llm_model=None,
+    base_dir="./mazinger_output",
+    llm_think=None,
+)
+```
+
+<ParamField path="openai_api_key" type="str | None" default="None">
+  OpenAI API key used for translation, content description, and optional ASR review. Falls back to the `OPENAI_API_KEY` environment variable when omitted.
+</ParamField>
+
+<ParamField path="openai_base_url" type="str | None" default="None">
+  Custom base URL for the OpenAI-compatible API endpoint. Falls back to the `OPENAI_BASE_URL` environment variable. Useful when routing through a proxy or using a self-hosted model server.
+</ParamField>
+
+<ParamField path="llm_model" type="str | None" default="None">
+  Model identifier used for all LLM calls (translation, description, review, re-segmentation). Falls back to the `OPENAI_MODEL` environment variable, then `"gpt-4.1"`.
+</ParamField>
+
+<ParamField path="base_dir" type="str" default="./mazinger_output">
+  Root directory under which per-project folders are created. Each project gets its own subdirectory at `<base_dir>/projects/<slug>/`.
+</ParamField>
+
+<ParamField path="llm_think" type="bool | None" default="None">
+  Controls the LLM thinking/reasoning mode. `True` enables it, `False` disables it, `None` (default) sends no preference and lets the model decide. Set to `False` for Ollama models like Qwen3 that have thinking enabled by default.
+</ParamField>
+
+---
+
+## dub()
+
+Runs the full pipeline and returns a `ProjectPaths` object with all output file paths populated.
+
+```python
+proj = dubber.dub(
+    source,
+    voice_sample=None,
+    voice_script=None,
+    *,
+    # ... keyword-only parameters below
+)
+```
+
+<Note>
+  When neither `voice_sample`/`voice_script` nor `voice_theme` is provided, the pipeline automatically clones the speaker's voice from the source audio. A 20–60 second segment with the highest word coverage is selected from the transcript.
+</Note>
+
+### Source parameters
+
+<ParamField path="source" type="str" required>
+  Video URL, local video file path, or local audio file path. Supports any URL that yt-dlp can handle (YouTube, Vimeo, etc.) as well as local MP4, MKV, MP3, WAV, and other common formats.
+</ParamField>
+
+<ParamField path="slug" type="str | None" default="None">
+  Project directory name. When omitted, derived from the video title (for URLs) or filename (for local files). Use this to give a project a stable, human-readable name.
+</ParamField>
+
+<ParamField path="start" type="str | None" default="None">
+  Start timestamp for slicing the source media. Accepts `HH:MM:SS` (e.g. `"00:01:30"`) or plain seconds (e.g. `"90"`).
+</ParamField>
+
+<ParamField path="end" type="str | None" default="None">
+  End timestamp for slicing the source media. Accepts `HH:MM:SS` (e.g. `"00:05:00"`) or plain seconds (e.g. `"300"`).
+</ParamField>
+
+<ParamField path="quality" type="str | None" default="None">
+  Video download quality. Accepts `"low"` (360p), `"medium"` (720p, default when omitted), `"high"` (best available), or a numeric resolution like `"1080"`.
+</ParamField>
+
+<ParamField path="cookies_from_browser" type="str | None" default="None">
+  Browser name for yt-dlp cookie extraction (e.g. `"chrome"`, `"firefox"`). Used to authenticate age-restricted or member-only content.
+</ParamField>
+
+<ParamField path="cookies" type="str | None" default="None">
+  Path to a Netscape-format `cookies.txt` file passed to yt-dlp's `--cookies` option.
+</ParamField>
+
+### Voice parameters
+
+<ParamField path="voice_sample" type="str | None" default="None">
+  Path to a reference audio file for voice cloning. Can be omitted when `voice_theme` is provided or when using auto-clone mode.
+</ParamField>
+
+<ParamField path="voice_script" type="str | None" default="None">
+  Path to a text file containing the transcript of `voice_sample`, or the transcript string itself. Can be omitted when `voice_theme` is provided.
+</ParamField>
+
+<ParamField path="voice_theme" type="str | None" default="None">
+  Pre-defined voice theme name (e.g. `"narrator-m"`, `"young-f"`). Generates a reference voice via Qwen VoiceDesign in the target language. Mutually exclusive with `voice_sample`/`voice_script`. See [`mazinger.profiles.list_themes()`](/reference/python-stages#profiles) for all 16 available themes.
+</ParamField>
+
+### Transcription parameters
+
+<ParamField path="transcribe_method" type="str" default="faster-whisper">
+  Transcription backend. Options:
+  - `"faster-whisper"` — local GPU, 4× faster than original Whisper (default)
+  - `"openai"` — OpenAI Whisper cloud API, no local GPU required
+  - `"whisperx"` — local with word-level alignment (requires `[transcribe-whisperx]` extra)
+  - `"mlx-whisper"` — Apple Silicon native (requires `[transcribe-mlx]` extra)
+</ParamField>
+
+<ParamField path="whisper_model" type="str | None" default="None">
+  Whisper model name override. Defaults to `"whisper-1"` for the OpenAI backend and `"large-v3"` for faster-whisper and WhisperX.
+</ParamField>
+
+<ParamField path="mlx_whisper_model" type="str" default="mlx-community/whisper-large-v3-turbo">
+  MLX Whisper model identifier (Apple Silicon only).
+</ParamField>
+
+<ParamField path="source_language" type="str" default="auto">
+  Source language of the video. Use `"auto"` for automatic detection, or a language name like `"Arabic"`.
+</ParamField>
+
+<ParamField path="asr_review" type="bool" default="False">
+  When `True`, an LLM reviews the raw ASR transcript to fix typos, add punctuation, and correct misheard words before translation.
+</ParamField>
+
+<ParamField path="keep_technical_english" type="bool" default="False">
+  When `True` (requires `asr_review=True`), converts technical terms to English in the reviewed transcript.
+</ParamField>
+
+<ParamField path="use_youtube_subs" type="bool" default="False">
+  When `True`, downloads YouTube captions alongside the ASR transcript and uses an LLM to select the higher-quality source for translation.
+</ParamField>
+
+### Translation parameters
+
+<ParamField path="target_language" type="str" default="English">
+  Target language for dubbing. Must be one of the 33 supported language names (e.g. `"Spanish"`, `"Arabic"`, `"Japanese"`).
+</ParamField>
+
+<ParamField path="translate_technical_terms" type="bool" default="False">
+  When `False` (default), technical terms are kept in their original language and embedded naturally into the translation. When `True`, they are translated into professional target-language equivalents.
+</ParamField>
+
+<ParamField path="words_per_second" type="float | None" default="None">
+  Target speech rate (words per second) used to budget translation length for dubbing timing. When `None`, estimated automatically from source speech density and target-language TTS rate.
+</ParamField>
+
+<ParamField path="duration_budget" type="float | None" default="None">
+  Fraction of each subtitle's time window allocated to speech (default `0.85`). Lower values leave more silence; higher values risk TTS overflow.
+</ParamField>
+
+### TTS parameters
+
+<ParamField path="tts_engine" type="str" default="qwen">
+  TTS engine. Options: `"qwen"` (Qwen3-TTS), `"chatterbox"` (Chatterbox by Resemble AI), `"mlx"` (MLX Qwen3-TTS for Apple Silicon).
+</ParamField>
+
+<ParamField path="tts_model_name" type="str" default="Qwen/Qwen3-TTS-12Hz-1.7B-Base">
+  HuggingFace model identifier for the Qwen TTS engine.
+</ParamField>
+
+<ParamField path="tts_dtype" type="str" default="bfloat16">
+  Weight dtype for the TTS model. Options: `"bfloat16"`, `"float16"`, `"float32"`. Falls back to `float32` automatically on CPU or older GPUs.
+</ParamField>
+
+<ParamField path="tts_language" type="str | None" default="None">
+  Language name passed to the TTS model. Defaults to `target_language` when omitted.
+</ParamField>
+
+<ParamField path="mlx_model" type="str" default="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16">
+  MLX TTS model identifier (Apple Silicon only).
+</ParamField>
+
+<ParamField path="chatterbox_model" type="str" default="ResembleAI/chatterbox">
+  HuggingFace model identifier for the Chatterbox TTS engine.
+</ParamField>
+
+<ParamField path="chatterbox_exaggeration" type="float" default="0.5">
+  Emotion intensity for Chatterbox. Range: `0.0` (flat) to `1.0` (highly expressive).
+</ParamField>
+
+<ParamField path="chatterbox_cfg" type="float" default="0.5">
+  Pacing control (CFG weight) for Chatterbox. Range: `0.0` to `1.0`.
+</ParamField>
+
+### Output parameters
+
+<ParamField path="output_type" type="str" default="audio">
+  Output format. `"audio"` produces a dubbed WAV file only. `"video"` also muxes the dubbed audio into the source video as an MP4.
+</ParamField>
+
+<ParamField path="subtitle_style" type="SubtitleStyle | None" default="None">
+  Optional `SubtitleStyle` instance for burning subtitles into the output video. Providing this implies video output. See [`mazinger.subtitle.SubtitleStyle`](/reference/python-stages#subtitle).
+</ParamField>
+
+<ParamField path="subtitle_source" type="str" default="translated">
+  Which subtitles to burn in. Options: `"translated"` (default), `"original"`, or an absolute file path to a custom SRT file.
+</ParamField>
+
+<ParamField path="loudness_match" type="bool" default="True">
+  Normalise dubbed audio loudness to match the original audio's integrated LUFS level.
+</ParamField>
+
+<ParamField path="mix_background" type="bool" default="True">
+  Extract background audio (music, ambience) from the original and mix it under the dubbed speech at `background_volume`.
+</ParamField>
+
+<ParamField path="background_volume" type="float" default="0.15">
+  Gain multiplier for the background audio layer. Range: `0.0` (silent) to `1.0` (full volume).
+</ParamField>
+
+### Advanced parameters
+
+<ParamField path="device" type="str" default="cuda">
+  Accelerator device for local models. Options: `"cuda"`, `"cpu"`, or a specific device like `"cuda:1"`.
+</ParamField>
+
+<ParamField path="tempo_mode" type="str" default="auto">
+  How the assembler handles timing mismatches between TTS audio and subtitle slots:
+  - `"auto"` — speed up overflows, slow down short segments toward 92% fill (default)
+  - `"dynamic"` — alias for `"auto"`
+  - `"fixed"` — apply `fixed_tempo` multiplier to every segment
+  - `"off"` — no tempo adjustment
+</ParamField>
+
+<ParamField path="fixed_tempo" type="float | None" default="None">
+  Constant speed multiplier applied to every TTS segment when `tempo_mode="fixed"` (e.g. `1.1` for 10% faster).
+</ParamField>
+
+<ParamField path="max_tempo" type="float" default="1.5">
+  Upper speed cap for dynamic/auto tempo mode. TTS audio that would require stretching beyond this ratio is trimmed at the quietest point instead.
+</ParamField>
+
+<ParamField path="use_resegmented" type="bool" default="False">
+  When `True`, the pipeline uses the resegmented (shorter, more readable) SRT as the translation input instead of the raw ASR output.
+</ParamField>
+
+<ParamField path="skip_existing" type="bool" default="True">
+  When `True`, stages whose outputs already exist on disk are skipped. Enables resuming an interrupted pipeline run.
+</ParamField>
+
+<ParamField path="force_reset" type="bool" default="False">
+  When `True`, discards all cached/intermediate outputs and re-runs every stage from scratch. Overrides `skip_existing`.
+</ParamField>
+
+---
+
+## Return value — ProjectPaths
+
+`dub()` returns a `ProjectPaths` instance. All output file paths are available as attributes immediately after the call.
+
+| Property | Description |
+|---|---|
+| `root` | `<base_dir>/projects/<slug>/` — project root directory |
+| `video` | `source/video.mp4` — downloaded or copied source video |
+| `audio` | `source/audio.mp3` — extracted audio track |
+| `video_meta` | `source/video_meta.json` — yt-dlp metadata (YouTube only) |
+| `source_srt` | `transcription/source.srt` — resegmented ASR transcript |
+| `source_raw_srt` | `transcription/source.raw.srt` — raw ASR output before resegmentation |
+| `reviewed_srt` | `transcription/source.reviewed.srt` — ASR-reviewed transcript (when `asr_review=True`) |
+| `translated_raw_srt` | `lang/<language>/transcription/translated.raw.srt` — raw translation output |
+| `final_srt` | `lang/<language>/subtitles/translated.srt` — production-ready subtitle file |
+| `thumbs_meta` | `thumbnails/meta.json` — extracted frame metadata |
+| `description` | `analysis/description.json` — LLM-generated content description |
+| `final_audio` | `lang/<language>/tts/dubbed.wav` — final assembled dubbed audio |
+| `final_video` | `lang/<language>/tts/dubbed.mp4` — muxed dubbed video (when `output_type="video"`) |
+| `tts_segments_dir` | `lang/<language>/tts/segments/` — individual TTS segment WAV files |
+| `voice_profile_dir` | `lang/<language>/voice_profile/` — cloned or generated voice reference |
+
+```python
+# Access paths after dubbing
+print(proj.final_audio)   # path to dubbed WAV
+print(proj.final_video)   # path to dubbed MP4 (if output_type="video")
+print(proj.summary())     # human-readable checklist of which files exist
+```
+
+---
+
+## Usage examples
+
+### Auto-clone (simplest)
+
+No voice configuration needed. Mazinger automatically selects a 20–60 second segment from the source audio to use as the voice reference.
+
+```python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...", base_dir="./output")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    target_language="Spanish",
+    output_type="video",
+)
+
+print(proj.final_video)
+```
+
+### Voice theme
+
+Use one of 16 pre-defined voice personas. Mazinger downloads or generates a matching voice sample automatically.
+
+```python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...", base_dir="./output")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_theme="narrator-m",
+    target_language="Spanish",
+    output_type="video",
+)
+
+print(proj.final_video)
+```
+
+### Full example with SubtitleStyle and fetch_profile
+
+```python
+from mazinger import MazingerDubber
+from mazinger.profiles import fetch_profile
+from mazinger.subtitle import SubtitleStyle
+
+dubber = MazingerDubber(
+    openai_api_key="sk-...",
+    llm_model="gpt-4.1",
+    base_dir="./output",
+)
+
+voice, script = fetch_profile("abubakr")
+
+style = SubtitleStyle(
+    font_size=24,
+    font_color="yellow",
+    bg_color="black",
+    bg_alpha=0.8,
+    bold=True,
+)
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_sample=voice,
+    voice_script=script,
+    target_language="Arabic",
+    output_type="video",
+    subtitle_style=style,
+    subtitle_source="translated",
+    tts_engine="qwen",
+    transcribe_method="faster-whisper",
+)
+
+print(proj.summary())
+```

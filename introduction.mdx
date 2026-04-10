@@ -1,0 +1,84 @@
+---
+title: "What is Mazinger Dubber?"
+description: "Mazinger Dubber chains download, transcription, translation, voice cloning, and subtitle burning into a single pipeline. Dub any video into 33 languages."
+---
+
+Mazinger Dubber is a Python CLI and library that takes a video URL or local file and produces a fully dubbed audio or video output. It chains together downloading, speech transcription, subtitle translation, voice synthesis, and timeline assembly — all in one command. Every stage can also run independently, and interrupted runs resume automatically from the last completed step.
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Mazinger with pip and choose your transcription and TTS extras
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Dub your first video in one command — no configuration required
+  </Card>
+  <Card title="Pipeline overview" icon="diagram-project" href="/pipeline/overview">
+    How the 10 stages connect, what each produces, and how caching works
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/reference/cli-dub">
+    Every command, flag, and default value for the mazinger CLI
+  </Card>
+</CardGroup>
+
+## The 10-stage pipeline
+
+Mazinger chains ten stages into a single pipeline. Each stage can also run independently via its own sub-command, and every completed stage is cached so interrupted runs resume where they left off.
+
+<Steps>
+  <Step title="Download">
+    Fetch the video from a URL (YouTube and more via yt-dlp) or ingest a local file, then extract the audio track.
+  </Step>
+  <Step title="Transcribe">
+    Convert speech to SRT subtitles using OpenAI Whisper API, faster-whisper, WhisperX, or MLX Whisper.
+  </Step>
+  <Step title="Thumbnails">
+    Use an LLM to pick key frames from the video for visual context to improve translation quality.
+  </Step>
+  <Step title="Describe">
+    Analyze the transcript and thumbnails to produce a structured content summary — title, key points, and keywords.
+  </Step>
+  <Step title="Review">
+    Optionally refine ASR output: fix typos, reshape punctuation, and normalize technical terms to English.
+  </Step>
+  <Step title="Translate">
+    Translate the SRT into the target language using duration-aware word budgets so the dubbed speech fits the original timeline.
+  </Step>
+  <Step title="Re-segment">
+    Merge short subtitle fragments and split oversized entries for readability and natural pacing.
+  </Step>
+  <Step title="Speak">
+    Synthesize voice-cloned speech for every subtitle entry using Qwen3-TTS, Chatterbox, or MLX TTS. Choose from 16 pre-defined voice themes, a hosted profile, or your own voice sample.
+  </Step>
+  <Step title="Assemble">
+    Place each audio segment on the original timeline with optional tempo adjustment, loudness matching, and background audio mixing.
+  </Step>
+  <Step title="Subtitle">
+    Burn styled subtitles into the video and/or mux the new dubbed audio track into the final output.
+  </Step>
+</Steps>
+
+## Key features
+
+**Auto voice cloning** — When no voice option is provided, Mazinger automatically selects the best 20–60 second segment from the source audio and uses it as the cloning reference. No files or extra configuration needed.
+
+**Voice themes** — Choose from 16 pre-defined themes without providing any voice samples: `narrator-m/f`, `young-m/f`, `deep-m/f`, `warm-m/f`, `news-m/f`, `storyteller-m/f`, `kid-m/f`, `teen-m/f`. Themes are generated once and reused on subsequent runs.
+
+**Built-in voice profiles** — Ready-made profiles (`abubakr`, `daheeh-v1`, `3b1b`, `italian-v1`, `morgan-freeman`, `trump-v1`) are hosted on HuggingFace and downloaded automatically.
+
+**Resume and caching** — Every stage writes its output to disk. If a run is interrupted mid-way through TTS synthesis, re-running the same command picks up from exactly where it left off. Individual segment WAVs are also cached.
+
+**Multi-backend transcription** — Cloud transcription via the OpenAI Whisper API requires no GPU. For local transcription, choose faster-whisper (recommended, CTranslate2), WhisperX (word-level alignment via wav2vec2), or MLX Whisper for Apple Silicon.
+
+**Multi-backend TTS** — Qwen3-TTS (multilingual, requires voice sample and transcript), Chatterbox (emotion and pacing control, audio-only reference), or MLX TTS (native Apple Silicon performance). Each engine requires its own virtual environment.
+
+## Prerequisites
+
+- **Python 3.10 or later**
+- **ffmpeg** installed and on `PATH` — `apt install ffmpeg` or `brew install ffmpeg`
+- **OpenAI API key** — required for cloud transcription, translation, thumbnails, and description stages
+- **CUDA GPU** — required for local transcription and TTS (not needed for cloud-only workflows)
+- **Apple Silicon (M1–M5)** — optional, for MLX-accelerated TTS and transcription
+
+<Note>
+  Qwen, Chatterbox, and MLX require different dependency versions and cannot share the same Python environment. Create a separate virtual environment for each TTS engine.
+</Note>

@@ -1,0 +1,156 @@
+---
+title: "Bypass YouTube Restrictions with Cookies"
+description: "Export browser cookies and pass them to Mazinger so yt-dlp can download age-restricted, region-locked, or member-only YouTube videos."
+---
+
+Some YouTube videos require an authenticated session before they can be downloaded. This includes age-restricted content, region-locked uploads, and channel-member-only videos. When Mazinger's download stage fails with a **403**, **Sign in to confirm your age**, or a similar error, you need to pass your YouTube cookies so that `yt-dlp` can authenticate on your behalf — no password is ever shared.
+
+## Why cookies are needed
+
+YouTube increasingly requires a logged-in session to serve certain content. Cookies prove to `yt-dlp` that you have an active, authenticated session. There are two ways to supply them: read them directly from a browser profile, or export them to a `cookies.txt` file first.
+
+## Export cookies from your browser
+
+### Method 1 — Read directly from a browser (no file needed)
+
+Pass the `--cookies-from-browser` flag and let `yt-dlp` read the cookie database directly. Supported browsers are `chrome`, `firefox`, `edge`, `brave`, `opera`, `safari`, and `chromium`.
+
+<CodeGroup>
+
+```bash Chrome
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser chrome \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+```bash Firefox
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser firefox \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+```bash Safari
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser safari \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+</CodeGroup>
+
+<Note>
+The browser must be closed (or at least not actively writing to its cookie database) when you run this command. On some systems it may also require elevated permissions to read the cookie store.
+</Note>
+
+### Method 2 — Export a `cookies.txt` file with a browser extension
+
+<Steps>
+  <Step title="Install the extension">
+    Install [**Get cookies.txt locally**](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) from the Chrome Web Store. It works in Chrome, Edge, Brave, and other Chromium-based browsers.
+  </Step>
+  <Step title="Open it on YouTube">
+    Go to [youtube.com](https://www.youtube.com) and make sure you are **logged in**. Then click the extension icon in your browser toolbar.
+  </Step>
+  <Step title="Export the cookies file">
+    Click **Export** to download a `cookies.txt` file, or **Copy** to copy the contents to your clipboard and paste them into a new file.
+  </Step>
+</Steps>
+
+<Note>
+The exported file must be in **Netscape / cookies.txt** format. This is the default output of the extension above and the format expected by `yt-dlp` and Mazinger.
+</Note>
+
+## Pass cookies to Mazinger
+
+### CLI — `--cookies` flag
+
+Save the exported file (e.g. `cookies.txt`) and pass its path:
+
+<CodeGroup>
+
+```bash dub
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies cookies.txt \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+```bash download
+mazinger download "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies cookies.txt
+```
+
+```bash transcribe
+mazinger transcribe "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies cookies.txt
+```
+
+```bash translate
+mazinger translate "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies cookies.txt \
+    --target-language Spanish
+```
+
+</CodeGroup>
+
+### CLI — `--cookies-from-browser` flag
+
+Use the browser method directly on any command:
+
+<CodeGroup>
+
+```bash dub
+mazinger dub "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser chrome \
+    --clone-profile abubakr \
+    --target-language Arabic
+```
+
+```bash download
+mazinger download "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser firefox
+```
+
+```bash transcribe
+mazinger transcribe "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser chrome
+```
+
+```bash translate
+mazinger translate "https://youtube.com/watch?v=VIDEO_ID" \
+    --cookies-from-browser chrome \
+    --target-language Spanish
+```
+
+</CodeGroup>
+
+### Python API
+
+Pass either `cookies=` (path to a Netscape-format file) or `cookies_from_browser=` (browser name string) to `MazingerDubber`:
+
+```python
+from mazinger import MazingerDubber
+
+dubber = MazingerDubber(openai_api_key="sk-...")
+
+proj = dubber.dub(
+    source="https://youtube.com/watch?v=VIDEO_ID",
+    voice_sample="speaker.m4a",
+    voice_script="transcript.txt",
+    target_language="Spanish",
+    cookies="cookies.txt",           # path to Netscape cookies file
+    # cookies_from_browser="chrome", # OR read from browser directly
+)
+```
+
+## Security tips
+
+<Warning>
+**Never share your `cookies.txt` file.** It contains session tokens that grant full access to your YouTube account. Anyone with this file can act as you on YouTube.
+</Warning>
+
+- Add `cookies.txt` to your `.gitignore` so it is never accidentally committed to version control.
+- Cookies expire over time. If downloads start failing again with authentication errors, re-export a fresh copy.
+- Store the file in a directory that is not synced to cloud storage (e.g. outside your Dropbox or Google Drive folder).
